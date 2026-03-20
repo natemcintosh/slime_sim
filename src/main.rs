@@ -1,3 +1,4 @@
+mod config_io;
 mod gpu;
 mod simulation;
 mod ui;
@@ -159,19 +160,15 @@ impl ApplicationHandler for App {
                     ui::draw_ui(ctx, &mut self.ui_state);
                 });
                 egui_winit.handle_platform_output(window, full_output.platform_output);
-                let clipped_primitives = self.egui_ctx.tessellate(
-                    full_output.shapes,
-                    full_output.pixels_per_point,
-                );
+                let clipped_primitives = self
+                    .egui_ctx
+                    .tessellate(full_output.shapes, full_output.pixels_per_point);
 
                 // Get surface texture
                 let output = match gpu.surface.get_current_texture() {
                     Ok(t) => t,
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        gpu.resize(
-                            gpu.surface_config.width,
-                            gpu.surface_config.height,
-                        );
+                        gpu.resize(gpu.surface_config.width, gpu.surface_config.height);
                         return;
                     }
                     Err(e) => {
@@ -182,9 +179,10 @@ impl ApplicationHandler for App {
                 let view = output.texture.create_view(&Default::default());
 
                 let mut encoder =
-                    gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("frame_encoder"),
-                    });
+                    gpu.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("frame_encoder"),
+                        });
 
                 // Simulation steps
                 if !self.ui_state.paused {
@@ -193,26 +191,29 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Render simulation to screen
-                sim.render(&mut encoder, &view);
+                // Render simulation to screen (offset by panel width)
+                let scale = window.scale_factor() as f32;
+                let panel_px = self.ui_state.panel_width_points * scale;
+                let surface_w = gpu.surface_config.width as f32;
+                let surface_h = gpu.surface_config.height as f32;
+
+                let viewport = if panel_px > 1.0 {
+                    Some((panel_px, 0.0, (surface_w - panel_px).max(1.0), surface_h))
+                } else {
+                    None
+                };
+
+                sim.render(&mut encoder, &view, viewport);
 
                 // Render egui on top
                 let screen_descriptor = egui_wgpu::ScreenDescriptor {
-                    size_in_pixels: [
-                        gpu.surface_config.width,
-                        gpu.surface_config.height,
-                    ],
+                    size_in_pixels: [gpu.surface_config.width, gpu.surface_config.height],
                     pixels_per_point: window.scale_factor() as f32,
                 };
 
                 let egui_renderer = self.egui_renderer.as_mut().unwrap();
                 for (id, image_delta) in &full_output.textures_delta.set {
-                    egui_renderer.update_texture(
-                        &gpu.device,
-                        &gpu.queue,
-                        *id,
-                        image_delta,
-                    );
+                    egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, image_delta);
                 }
                 egui_renderer.update_buffers(
                     &gpu.device,
