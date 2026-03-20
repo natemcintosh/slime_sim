@@ -18,3 +18,8 @@ log = "0.4"
 egui = "0.33"
 egui-wgpu = "0.33"
 egui-winit = "0.33"
+serde = { version = "1", features = ["derive"] }
+quick-xml = { version = "0.38", features = ["serialize"] }
+
+[dev-dependencies]
+rstest = "0.26"
