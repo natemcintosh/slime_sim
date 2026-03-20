@@ -83,6 +83,7 @@ impl Default for UiState {
 
 pub fn draw_ui(ctx: &Context, state: &mut UiState) {
     egui::SidePanel::left("controls").show(ctx, |ui| {
+        egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Slime Simulation");
         ui.separator();
 
@@ -142,5 +143,6 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
         if ui.button("Reset Simulation").clicked() {
             state.reset_requested = true;
         }
+        });
     });
 }
