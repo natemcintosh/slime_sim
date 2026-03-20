@@ -1,0 +1,15 @@
+[package]
+name = "slime_sim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wgpu = "27"
+winit = "0.30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+egui = "0.33"
+egui-wgpu = "0.33"
+egui-winit = "0.33"
