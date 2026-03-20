@@ -2,6 +2,11 @@
 name = "slime_sim"
 version = "0.1.0"
 edition = "2024"
+description = "GPU-accelerated slime mold simulation using wgpu"
+license = "MIT"
+repository = "https://github.com/natemcintosh/slime_sim"
+keywords = ["simulation", "slime-mold", "wgpu", "gpu", "compute-shader"]
+categories = ["simulation", "graphics", "rendering"]
 
 [dependencies]
 wgpu = "27"
