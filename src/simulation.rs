@@ -388,15 +388,14 @@ impl Simulation {
                 bind_group_layouts: &[&update_bgl],
                 push_constant_ranges: &[],
             });
-        let update_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("update_pipeline"),
-                layout: Some(&update_pipeline_layout),
-                module: &update_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
+        let update_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("update_pipeline"),
+            layout: Some(&update_pipeline_layout),
+            module: &update_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
 
         let diffuse_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -404,15 +403,14 @@ impl Simulation {
                 bind_group_layouts: &[&diffuse_bgl],
                 push_constant_ranges: &[],
             });
-        let diffuse_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("diffuse_pipeline"),
-                layout: Some(&diffuse_pipeline_layout),
-                module: &diffuse_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
+        let diffuse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("diffuse_pipeline"),
+            layout: Some(&diffuse_pipeline_layout),
+            module: &diffuse_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
 
         let colour_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -420,52 +418,49 @@ impl Simulation {
                 bind_group_layouts: &[&colour_bgl],
                 push_constant_ranges: &[],
             });
-        let colour_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("colour_pipeline"),
-                layout: Some(&colour_pipeline_layout),
-                module: &colour_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
+        let colour_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("colour_pipeline"),
+            layout: Some(&colour_pipeline_layout),
+            module: &colour_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
 
         // --- Render pipeline (blit) ---
-        let blit_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blit_pipeline_layout"),
-                bind_group_layouts: &[&blit_bgl],
-                push_constant_ranges: &[],
-            });
-        let blit_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("blit_pipeline"),
-                layout: Some(&blit_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &blit_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: Default::default(),
-                },
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &blit_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: surface_format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                multiview: None,
-                cache: None,
-            });
+        let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blit_pipeline_layout"),
+            bind_group_layouts: &[&blit_bgl],
+            push_constant_ranges: &[],
+        });
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blit_pipeline"),
+            layout: Some(&blit_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blit_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &blit_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview: None,
+            cache: None,
+        });
 
         // --- Sampler ---
         let blit_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -504,12 +499,8 @@ impl Simulation {
             &species_buffer,
         );
 
-        let blit_bind_group = create_blit_bind_group(
-            device,
-            &blit_bgl,
-            &colour_view,
-            &blit_sampler,
-        );
+        let blit_bind_group =
+            create_blit_bind_group(device, &blit_bgl, &colour_view, &blit_sampler);
 
         Self {
             width,
@@ -596,11 +587,7 @@ impl Simulation {
             pass.set_pipeline(&self.diffuse_pipeline);
             // After update: trail[write_idx] has the deposits. Diffuse reads write_idx, writes read_idx
             pass.set_bind_group(0, &self.diffuse_bind_groups[write_idx], &[]);
-            pass.dispatch_workgroups(
-                (self.width + 7) / 8,
-                (self.height + 7) / 8,
-                1,
-            );
+            pass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
 
         // Swap: after diffuse, the "fresh" data is in trail[read_idx], so next frame read_idx flips
@@ -611,6 +598,7 @@ impl Simulation {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
+        viewport: Option<(f32, f32, f32, f32)>,
     ) {
         // Colour map pass
         {
@@ -625,11 +613,7 @@ impl Simulation {
             // So we read from trail[1-trail_idx].
             let result_idx = 1 - self.trail_idx;
             pass.set_bind_group(0, &self.colour_bind_groups[result_idx], &[]);
-            pass.dispatch_workgroups(
-                (self.width + 7) / 8,
-                (self.height + 7) / 8,
-                1,
-            );
+            pass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
 
         // Blit to screen
@@ -651,16 +635,14 @@ impl Simulation {
             });
             pass.set_pipeline(&self.blit_pipeline);
             pass.set_bind_group(0, &self.blit_bind_group, &[]);
+            if let Some((x, y, w, h)) = viewport {
+                pass.set_viewport(x, y, w, h, 0.0, 1.0);
+            }
             pass.draw(0..3, 0..1);
         }
     }
 
-    pub fn reset(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        ui: &UiState,
-    ) {
+    pub fn reset(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, ui: &UiState) {
         self.num_agents = ui.num_agents;
         self.elapsed_time = 0.0;
         self.trail_idx = 0;
@@ -834,11 +816,26 @@ fn create_update_bind_groups(
         label: Some("update_bg_0"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: agents.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(trail_view_a) },
-            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(trail_view_b) },
-            wgpu::BindGroupEntry { binding: 4, resource: species.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: agents.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(trail_view_a),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: species.as_entire_binding(),
+            },
         ],
     });
     // Group 1: read B, write A
@@ -846,11 +843,26 @@ fn create_update_bind_groups(
         label: Some("update_bg_1"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: agents.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(trail_view_b) },
-            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(trail_view_a) },
-            wgpu::BindGroupEntry { binding: 4, resource: species.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: agents.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(trail_view_a),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: species.as_entire_binding(),
+            },
         ],
     });
     [bg0, bg1]
@@ -867,18 +879,36 @@ fn create_diffuse_bind_groups(
         label: Some("diffuse_bg_0"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(trail_view_a) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(trail_view_b) },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(trail_view_a),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
         ],
     });
     let bg1 = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("diffuse_bg_1"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(trail_view_b) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(trail_view_a) },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(trail_view_a),
+            },
         ],
     });
     [bg0, bg1]
@@ -897,20 +927,44 @@ fn create_colour_bind_groups(
         label: Some("colour_bg_0"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: colour_params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(trail_view_a) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(colour_view) },
-            wgpu::BindGroupEntry { binding: 3, resource: species.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: colour_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(trail_view_a),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(colour_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: species.as_entire_binding(),
+            },
         ],
     });
     let bg1 = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("colour_bg_1"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: colour_params.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(trail_view_b) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(colour_view) },
-            wgpu::BindGroupEntry { binding: 3, resource: species.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: colour_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(colour_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: species.as_entire_binding(),
+            },
         ],
     });
     [bg0, bg1]
@@ -926,8 +980,185 @@ fn create_blit_bind_group(
         label: Some("blit_bg"),
         layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(colour_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(colour_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
         ],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::UiState;
+    use rstest::rstest;
+
+    fn angle_delta(a: f32, b: f32) -> f32 {
+        let mut d = (a - b + std::f32::consts::PI) % std::f32::consts::TAU;
+        if d < 0.0 {
+            d += std::f32::consts::TAU;
+        }
+        (d - std::f32::consts::PI).abs()
+    }
+
+    #[rstest]
+    #[case(0, 129708002)]
+    #[case(1, 2831084092)]
+    #[case(7, 2120684060)]
+    #[case(42, 1223963391)]
+    #[case(123456789, 4272394698)]
+    #[case(u32::MAX, 3861530882)]
+    fn hash_u32_matches_known_values(#[case] input: u32, #[case] expected: u32) {
+        assert_eq!(hash_u32(input), expected);
+    }
+
+    #[test]
+    fn build_species_data_converts_angles_and_sets_alpha() {
+        let mut ui = UiState::default();
+        ui.species[0].sensor_angle_deg = 45.0;
+        ui.species[0].colour = [0.2, 0.3, 0.4];
+
+        let out = build_species_data(&ui);
+        assert_eq!(out.len(), 4);
+        assert!((out[0].sensor_angle_spacing - std::f32::consts::FRAC_PI_4).abs() < 1e-6);
+        assert_eq!(out[0].colour, [0.2, 0.3, 0.4, 1.0]);
+    }
+
+    #[rstest]
+    #[case(SpawnMode::CentreCircle)]
+    #[case(SpawnMode::RandomFill)]
+    #[case(SpawnMode::InwardCircle)]
+    fn create_agents_is_deterministic_and_cycles_species(#[case] mode: SpawnMode) {
+        let num_agents = 512;
+        let num_species = 3;
+        let width = 640;
+        let height = 480;
+
+        let first = create_agents(num_agents, num_species, width, height, mode);
+        let second = create_agents(num_agents, num_species, width, height, mode);
+
+        assert_eq!(first.len(), num_agents as usize);
+        assert_eq!(second.len(), num_agents as usize);
+
+        for (i, (a, b)) in first.iter().zip(second.iter()).enumerate() {
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.angle, b.angle);
+            assert_eq!(a.species_index, (i as u32) % num_species);
+        }
+    }
+
+    #[test]
+    fn create_agents_random_fill_stays_within_bounds() {
+        let width = 320;
+        let height = 200;
+        let agents = create_agents(1000, 4, width, height, SpawnMode::RandomFill);
+
+        for agent in agents {
+            assert!(agent.position[0] >= 0.0 && agent.position[0] <= width as f32);
+            assert!(agent.position[1] >= 0.0 && agent.position[1] <= height as f32);
+        }
+    }
+
+    #[rstest]
+    #[case(SpawnMode::CentreCircle)]
+    #[case(SpawnMode::InwardCircle)]
+    fn create_agents_circle_modes_stay_within_spawn_radius(#[case] mode: SpawnMode) {
+        let width = 300;
+        let height = 220;
+        let cx = width as f32 / 2.0;
+        let cy = height as f32 / 2.0;
+        let radius = cx.min(cy) * 0.4;
+        let agents = create_agents(1000, 4, width, height, mode);
+
+        for agent in agents {
+            let dx = agent.position[0] - cx;
+            let dy = agent.position[1] - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            assert!(dist <= radius + 1e-4);
+        }
+    }
+
+    #[test]
+    fn inward_circle_agents_point_toward_centre() {
+        let width = 600;
+        let height = 600;
+        let cx = width as f32 / 2.0;
+        let cy = height as f32 / 2.0;
+        let agents = create_agents(1000, 2, width, height, SpawnMode::InwardCircle);
+
+        for agent in agents {
+            let to_center_x = cx - agent.position[0];
+            let to_center_y = cy - agent.position[1];
+            let dist = (to_center_x * to_center_x + to_center_y * to_center_y).sqrt();
+            if dist < 1e-6 {
+                continue;
+            }
+
+            let expected = to_center_y.atan2(to_center_x);
+            assert!(angle_delta(agent.angle, expected) < 1e-4);
+        }
+    }
+
+    #[test]
+    #[ignore = "Requires compatible local GPU/driver stack"]
+    fn gpu_smoke_can_create_simulation_and_step_once() {
+        pollster::block_on(async {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::all(),
+                ..Default::default()
+            });
+
+            let adapter = match instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                })
+                .await
+            {
+                Ok(adapter) => adapter,
+                Err(_) => {
+                    eprintln!("Skipping GPU smoke test: no adapter available");
+                    return;
+                }
+            };
+
+            let (device, queue) = match adapter
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("test_device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(pair) => pair,
+                Err(err) => {
+                    eprintln!("Skipping GPU smoke test: failed to create device ({err})");
+                    return;
+                }
+            };
+
+            let ui = UiState::default();
+            let mut sim = Simulation::new(
+                &device,
+                &queue,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                64,
+                64,
+                &ui,
+            );
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("gpu_smoke_encoder"),
+            });
+            sim.step(&mut encoder);
+            queue.submit(std::iter::once(encoder.finish()));
+        });
+    }
 }
