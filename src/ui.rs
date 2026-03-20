@@ -26,6 +26,8 @@ pub struct UiState {
     pub spawn_mode: SpawnMode,
     pub reset_requested: bool,
     pub num_agents: u32,
+    pub paused: bool,
+    pub fps: f32,
 }
 
 impl Default for UiState {
@@ -73,6 +75,8 @@ impl Default for UiState {
             spawn_mode: SpawnMode::CentreCircle,
             reset_requested: false,
             num_agents: 250_000,
+            paused: false,
+            fps: 0.0,
         }
     }
 }
@@ -80,6 +84,15 @@ impl Default for UiState {
 pub fn draw_ui(ctx: &Context, state: &mut UiState) {
     egui::SidePanel::left("controls").show(ctx, |ui| {
         ui.heading("Slime Simulation");
+        ui.separator();
+
+        ui.label(format!("FPS: {:.0}", state.fps));
+        if ui
+            .button(if state.paused { "Resume" } else { "Pause" })
+            .clicked()
+        {
+            state.paused = !state.paused;
+        }
         ui.separator();
 
         ui.label("Global Settings");

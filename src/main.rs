@@ -18,6 +18,7 @@ struct App {
     window: Option<Arc<Window>>,
     ui_state: ui::UiState,
     last_frame: Instant,
+    smoothed_fps: f32,
 }
 
 impl App {
@@ -31,6 +32,7 @@ impl App {
             window: None,
             ui_state: ui::UiState::default(),
             last_frame: Instant::now(),
+            smoothed_fps: 0.0,
         }
     }
 }
@@ -127,6 +129,11 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(self.last_frame).as_secs_f32();
                 self.last_frame = now;
 
+                if dt > 0.0 {
+                    self.smoothed_fps = self.smoothed_fps * 0.95 + (1.0 / dt) * 0.05;
+                }
+                self.ui_state.fps = self.smoothed_fps;
+
                 let Some(sim) = self.sim.as_mut() else {
                     return;
                 };
@@ -138,7 +145,11 @@ impl ApplicationHandler for App {
                 }
 
                 // Update params from UI
-                let step_dt = dt / self.ui_state.steps_per_frame as f32;
+                let step_dt = if self.ui_state.paused {
+                    0.0
+                } else {
+                    dt / self.ui_state.steps_per_frame as f32
+                };
                 sim.update_params(&gpu.queue, &self.ui_state, step_dt);
 
                 // Build egui
@@ -176,8 +187,10 @@ impl ApplicationHandler for App {
                     });
 
                 // Simulation steps
-                for _ in 0..self.ui_state.steps_per_frame {
-                    sim.step(&mut encoder);
+                if !self.ui_state.paused {
+                    for _ in 0..self.ui_state.steps_per_frame {
+                        sim.step(&mut encoder);
+                    }
                 }
 
                 // Render simulation to screen
