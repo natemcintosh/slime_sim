@@ -57,7 +57,7 @@ impl Default for UiState {
                     sensor_angle_deg: 30.0,
                     sensor_offset: 35.0,
                     sensor_size: 1,
-                    colour: [0.2, 0.5, 1.0],
+                    colour: [0.306, 0.475, 0.655],
                 },
                 SpeciesUi {
                     move_speed: 100.0,
@@ -65,7 +65,7 @@ impl Default for UiState {
                     sensor_angle_deg: 30.0,
                     sensor_offset: 35.0,
                     sensor_size: 1,
-                    colour: [1.0, 0.3, 0.2],
+                    colour: [0.949, 0.557, 0.169],
                 },
                 SpeciesUi {
                     move_speed: 100.0,
@@ -73,7 +73,7 @@ impl Default for UiState {
                     sensor_angle_deg: 30.0,
                     sensor_offset: 35.0,
                     sensor_size: 1,
-                    colour: [0.2, 1.0, 0.3],
+                    colour: [0.882, 0.341, 0.349],
                 },
             ],
             trail_weight: 5.0,
