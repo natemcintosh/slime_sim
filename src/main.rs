@@ -39,6 +39,7 @@ impl App {
 }
 
 impl ApplicationHandler for App {
+    #[allow(clippy::cast_possible_truncation)]
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -86,6 +87,7 @@ impl ApplicationHandler for App {
         self.gpu = Some(gpu);
     }
 
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -172,11 +174,11 @@ impl ApplicationHandler for App {
                         return;
                     }
                     Err(e) => {
-                        log::error!("Surface error: {:?}", e);
+                        log::error!("Surface error: {e:?}");
                         return;
                     }
                 };
-                let view = output.texture.create_view(&Default::default());
+                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut encoder =
                     gpu.device

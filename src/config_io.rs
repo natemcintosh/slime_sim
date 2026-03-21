@@ -77,6 +77,7 @@ pub fn save_ui_state_to_xml(ui: &UiState, title: &str, notes: &str) -> Result<Pa
     Ok(path)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn build_config(title: &str, notes: &str, ui: &UiState, timestamp: u64) -> ConfigFile {
     let species_count = ui.num_species.min(ui.species.len() as u32) as usize;
     let species_list = ui.species[..species_count]
@@ -146,13 +147,12 @@ pub struct ConfigEntry {
 
 pub fn list_config_files() -> Vec<ConfigEntry> {
     let dir = PathBuf::from("configs");
-    let entries = match fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
     };
 
     let mut configs: Vec<ConfigEntry> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "xml"))
         .map(|e| {
             let path = e.path();
@@ -169,6 +169,7 @@ pub fn list_config_files() -> Vec<ConfigEntry> {
     configs
 }
 
+#[allow(clippy::field_reassign_with_default)]
 pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
     let xml = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
     let config: ConfigFile =

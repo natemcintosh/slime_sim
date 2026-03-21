@@ -99,6 +99,7 @@ pub struct Simulation {
 }
 
 impl Simulation {
+    #[allow(clippy::too_many_lines)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -173,8 +174,8 @@ impl Simulation {
         };
         let trail_a = device.create_texture(&trail_desc);
         let trail_b = device.create_texture(&trail_desc);
-        let trail_view_a = trail_a.create_view(&Default::default());
-        let trail_view_b = trail_b.create_view(&Default::default());
+        let trail_view_a = trail_a.create_view(&wgpu::TextureViewDescriptor::default());
+        let trail_view_b = trail_b.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Clear trail textures
         clear_texture(queue, &trail_a, width, height);
@@ -195,7 +196,7 @@ impl Simulation {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
-        let colour_view = colour_texture.create_view(&Default::default());
+        let colour_view = colour_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // --- Shader modules ---
         let update_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -393,7 +394,7 @@ impl Simulation {
             layout: Some(&update_pipeline_layout),
             module: &update_shader,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
 
@@ -408,7 +409,7 @@ impl Simulation {
             layout: Some(&diffuse_pipeline_layout),
             module: &diffuse_shader,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
 
@@ -423,7 +424,7 @@ impl Simulation {
             layout: Some(&colour_pipeline_layout),
             module: &colour_shader,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
 
@@ -440,7 +441,7 @@ impl Simulation {
                 module: &blit_shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -456,7 +457,7 @@ impl Simulation {
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             multiview: None,
             cache: None,
@@ -575,7 +576,7 @@ impl Simulation {
             pass.set_pipeline(&self.update_pipeline);
             // Bind group index: read_idx reads from trail[read_idx], writes to trail[write_idx]
             pass.set_bind_group(0, &self.update_bind_groups[read_idx], &[]);
-            pass.dispatch_workgroups((self.num_agents + 255) / 256, 1, 1);
+            pass.dispatch_workgroups(self.num_agents.div_ceil(256), 1, 1);
         }
 
         // Diffuse trail: read from write_idx (just written by update), write to read_idx
@@ -587,7 +588,7 @@ impl Simulation {
             pass.set_pipeline(&self.diffuse_pipeline);
             // After update: trail[write_idx] has the deposits. Diffuse reads write_idx, writes read_idx
             pass.set_bind_group(0, &self.diffuse_bind_groups[write_idx], &[]);
-            pass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
+            pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
         }
 
         // Swap: after diffuse, the "fresh" data is in trail[read_idx], so next frame read_idx flips
@@ -613,7 +614,7 @@ impl Simulation {
             // So we read from trail[1-trail_idx].
             let result_idx = 1 - self.trail_idx;
             pass.set_bind_group(0, &self.colour_bind_groups[result_idx], &[]);
-            pass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
+            pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
         }
 
         // Blit to screen
@@ -703,6 +704,7 @@ impl Simulation {
 
 // ---- Helper functions ----
 
+#[allow(clippy::cast_precision_loss)]
 fn create_agents(
     num: u32,
     num_species: u32,
@@ -757,8 +759,8 @@ fn create_agents(
 }
 
 fn hash_u32(mut state: u32) -> u32 {
-    state = state.wrapping_mul(747796405).wrapping_add(2891336453);
-    state = ((state >> ((state >> 28).wrapping_add(4))) ^ state).wrapping_mul(277803737);
+    state = state.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
+    state = ((state >> ((state >> 28).wrapping_add(4))) ^ state).wrapping_mul(277_803_737);
     (state >> 22) ^ state
 }
 
