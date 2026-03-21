@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo fmt 2>&1; out=$(cargo clippy -- -W clippy::pedantic 2>&1); n=$(printf '%s\\n' \"$out\" | grep -c '^warning' || true); [ \"$n\" -gt 0 ] && printf '{\"systemMessage\":\"clippy (pedantic): %d warning(s) found — run cargo clippy -- -W clippy::pedantic\"}\\n' \"$n\" || true",
+            "timeout": 60,
+            "statusMessage": "Running pedantic clippy..."
+          }
+        ]
+      }
+    ]
+  }
+}
