@@ -1,4 +1,5 @@
 mod config_io;
+mod food;
 mod gpu;
 mod simulation;
 mod ui;
@@ -121,14 +122,26 @@ impl ApplicationHandler for App {
                 gpu.resize(new_size.width, new_size.height);
                 // Recreate simulation with new dimensions
                 if new_size.width > 0 && new_size.height > 0 {
-                    self.sim = Some(simulation::Simulation::new(
+                    let new_sim = simulation::Simulation::new(
                         &gpu.device,
                         &gpu.queue,
                         gpu.surface_format(),
                         new_size.width,
                         new_size.height,
                         &self.ui_state,
-                    ));
+                    );
+                    // Re-upload food map at new dimensions
+                    if self.ui_state.food_weight > 0.0 {
+                        let food_data = food::generate_food_map(
+                            new_size.width,
+                            new_size.height,
+                            self.ui_state.food_num_clumps,
+                            self.ui_state.food_clump_radius,
+                            self.ui_state.food_seed,
+                        );
+                        new_sim.upload_food_map(&gpu.queue, &food_data);
+                    }
+                    self.sim = Some(new_sim);
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -149,6 +162,30 @@ impl ApplicationHandler for App {
                 if self.ui_state.reset_requested {
                     self.ui_state.reset_requested = false;
                     sim.reset(&gpu.device, &gpu.queue, &self.ui_state);
+                    // Re-upload food map after reset
+                    if self.ui_state.food_weight > 0.0 {
+                        let food_data = food::generate_food_map(
+                            sim.width,
+                            sim.height,
+                            self.ui_state.food_num_clumps,
+                            self.ui_state.food_clump_radius,
+                            self.ui_state.food_seed,
+                        );
+                        sim.upload_food_map(&gpu.queue, &food_data);
+                    }
+                }
+
+                // Handle food regeneration
+                if self.ui_state.food_regen_requested {
+                    self.ui_state.food_regen_requested = false;
+                    let food_data = food::generate_food_map(
+                        sim.width,
+                        sim.height,
+                        self.ui_state.food_num_clumps,
+                        self.ui_state.food_clump_radius,
+                        self.ui_state.food_seed,
+                    );
+                    sim.upload_food_map(&gpu.queue, &food_data);
                 }
 
                 // Update params from UI

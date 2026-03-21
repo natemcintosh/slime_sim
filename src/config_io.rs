@@ -32,6 +32,29 @@ struct SimulationConfig {
     num_species: u32,
     #[serde(rename = "species")]
     species_list: Vec<SpeciesConfig>,
+    #[serde(default)]
+    food_weight: f32,
+    #[serde(default = "default_food_num_clumps")]
+    food_num_clumps: u32,
+    #[serde(default = "default_food_clump_radius")]
+    food_clump_radius: f32,
+    #[serde(default = "default_food_viz_weight")]
+    food_viz_weight: f32,
+    #[serde(default = "default_true")]
+    show_food: bool,
+}
+
+fn default_food_num_clumps() -> u32 {
+    5
+}
+fn default_food_clump_radius() -> f32 {
+    30.0
+}
+fn default_food_viz_weight() -> f32 {
+    0.3
+}
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -112,6 +135,11 @@ fn build_config(title: &str, notes: &str, ui: &UiState, timestamp: u64) -> Confi
             num_agents: ui.num_agents,
             num_species: species_count as u32,
             species_list,
+            food_weight: ui.food_weight,
+            food_num_clumps: ui.food_num_clumps,
+            food_clump_radius: ui.food_clump_radius,
+            food_viz_weight: ui.food_viz_weight,
+            show_food: ui.show_food,
         },
     }
 }
@@ -186,6 +214,12 @@ pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
     ui.spawn_mode = spawn_mode;
     ui.num_agents = sim.num_agents;
     ui.num_species = sim.num_species.min(4);
+
+    ui.food_weight = sim.food_weight;
+    ui.food_num_clumps = sim.food_num_clumps;
+    ui.food_clump_radius = sim.food_clump_radius;
+    ui.food_viz_weight = sim.food_viz_weight;
+    ui.show_food = sim.show_food;
 
     for (i, sc) in sim.species_list.iter().enumerate().take(4) {
         ui.species[i] = SpeciesUi {
@@ -315,6 +349,72 @@ mod tests {
         assert_eq!(loaded.spawn_mode, SpawnMode::InwardCircle);
         assert!((loaded.species[0].move_speed - 200.0).abs() < 0.01);
         assert!((loaded.species[1].colour[1] - 0.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn round_trip_preserves_food_params() {
+        let mut ui = UiState::default();
+        ui.food_weight = 0.07;
+        ui.food_num_clumps = 12;
+        ui.food_clump_radius = 45.5;
+        ui.food_viz_weight = 0.8;
+        ui.show_food = false;
+
+        let path = save_ui_state_to_xml(&ui, "food-round-trip", "").unwrap();
+        let loaded = load_ui_state_from_xml(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert!((loaded.food_weight - 0.07).abs() < 0.01);
+        assert_eq!(loaded.food_num_clumps, 12);
+        assert!((loaded.food_clump_radius - 45.5).abs() < 0.1);
+        assert!((loaded.food_viz_weight - 0.8).abs() < 0.01);
+        assert!(!loaded.show_food);
+    }
+
+    #[test]
+    fn load_old_config_without_food_fields_uses_defaults() {
+        let dir = PathBuf::from("configs");
+        fs::create_dir_all(&dir).ok();
+        let path = dir.join("__test_no_food.xml");
+        // XML config from before food support was added
+        fs::write(
+            &path,
+            r#"<slime_config version="1">
+  <metadata>
+    <title>old config</title>
+    <notes/>
+    <saved_at>0</saved_at>
+  </metadata>
+  <simulation>
+    <trail_weight>5</trail_weight>
+    <decay_rate>0.3</decay_rate>
+    <diffuse_rate>3</diffuse_rate>
+    <steps_per_frame>1</steps_per_frame>
+    <spawn_mode>centre_circle</spawn_mode>
+    <num_agents>1000</num_agents>
+    <num_species>1</num_species>
+    <species>
+      <move_speed>100</move_speed>
+      <turn_speed>2</turn_speed>
+      <sensor_angle_deg>30</sensor_angle_deg>
+      <sensor_offset>35</sensor_offset>
+      <sensor_size>1</sensor_size>
+      <colour><r>1</r><g>1</g><b>1</b></colour>
+    </species>
+  </simulation>
+</slime_config>"#,
+        )
+        .unwrap();
+
+        let loaded = load_ui_state_from_xml(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        // Food fields should be their defaults
+        assert!((loaded.food_weight - 0.0).abs() < 1e-6);
+        assert_eq!(loaded.food_num_clumps, 5);
+        assert!((loaded.food_clump_radius - 30.0).abs() < 0.1);
+        assert!((loaded.food_viz_weight - 0.3).abs() < 0.01);
+        assert!(loaded.show_food);
     }
 
     #[test]

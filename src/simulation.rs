@@ -24,6 +24,8 @@ pub struct SimParams {
     pub diffuse_rate: f32,
     pub delta_time: f32,
     pub time: f32,
+    pub food_weight: f32,
+    pub _pad: [u32; 3],
 }
 
 #[repr(C)]
@@ -44,7 +46,7 @@ pub struct ColourParams {
     pub width: u32,
     pub height: u32,
     pub num_species: u32,
-    pub _pad: u32,
+    pub food_viz_weight: f32,
 }
 
 // ---- Simulation state ----
@@ -69,6 +71,11 @@ pub struct Simulation {
     #[allow(dead_code)]
     colour_texture: wgpu::Texture,
     colour_view: wgpu::TextureView,
+
+    // Food / population density map
+    #[allow(dead_code)]
+    food_texture: wgpu::Texture,
+    food_view: wgpu::TextureView,
 
     // Compute pipelines
     update_pipeline: wgpu::ComputePipeline,
@@ -127,6 +134,8 @@ impl Simulation {
             diffuse_rate: ui.diffuse_rate,
             delta_time: 1.0 / 60.0,
             time: 0.0,
+            food_weight: ui.food_weight,
+            _pad: [0; 3],
         };
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params_buffer"),
@@ -147,7 +156,7 @@ impl Simulation {
             width,
             height,
             num_species: ui.num_species,
-            _pad: 0,
+            food_viz_weight: 0.0,
         };
         let colour_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("colour_params_buffer"),
@@ -180,6 +189,44 @@ impl Simulation {
         // Clear trail textures
         clear_texture(queue, &trail_a, width, height);
         clear_texture(queue, &trail_b, width, height);
+
+        // --- Food texture ---
+        let food_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("food_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let food_view = food_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Initialize food texture to zeros
+        let food_zeros = vec![0.0f32; (width * height) as usize];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &food_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(&food_zeros),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
 
         // --- Colour map ---
         let colour_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -311,6 +358,17 @@ impl Simulation {
                     },
                     count: None,
                 },
+                // food_map texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -354,6 +412,17 @@ impl Simulation {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // food_map texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -488,6 +557,7 @@ impl Simulation {
             &params_buffer,
             &trail_view_a,
             &trail_view_b,
+            &food_view,
         );
 
         let colour_bind_groups = create_colour_bind_groups(
@@ -498,6 +568,7 @@ impl Simulation {
             &trail_view_b,
             &colour_view,
             &species_buffer,
+            &food_view,
         );
 
         let blit_bind_group =
@@ -515,6 +586,8 @@ impl Simulation {
             trail_idx: 0,
             colour_texture,
             colour_view,
+            food_texture,
+            food_view,
             update_pipeline,
             diffuse_pipeline,
             colour_pipeline,
@@ -544,6 +617,8 @@ impl Simulation {
             diffuse_rate: ui.diffuse_rate,
             delta_time: dt,
             time: self.elapsed_time,
+            food_weight: ui.food_weight,
+            _pad: [0; 3],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
@@ -554,13 +629,49 @@ impl Simulation {
             width: self.width,
             height: self.height,
             num_species: ui.num_species,
-            _pad: 0,
+            food_viz_weight: if ui.show_food {
+                ui.food_viz_weight
+            } else {
+                0.0
+            },
         };
         queue.write_buffer(
             &self.colour_params_buffer,
             0,
             bytemuck::bytes_of(&colour_params),
         );
+    }
+
+    pub fn upload_food_map(&self, queue: &wgpu::Queue, data: &[f32]) {
+        assert_eq!(
+            data.len(),
+            (self.width * self.height) as usize,
+            "food map size must match simulation dimensions"
+        );
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.food_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(data),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.width * 4),
+                rows_per_image: Some(self.height),
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    pub fn clear_food_map(&self, queue: &wgpu::Queue) {
+        let zeros = vec![0.0f32; (self.width * self.height) as usize];
+        self.upload_food_map(queue, &zeros);
     }
 
     pub fn step(&mut self, encoder: &mut wgpu::CommandEncoder) {
@@ -683,6 +794,7 @@ impl Simulation {
             &self.params_buffer,
             &self.trail_views[0],
             &self.trail_views[1],
+            &self.food_view,
         );
         self.colour_bind_groups = create_colour_bind_groups(
             device,
@@ -692,6 +804,7 @@ impl Simulation {
             &self.trail_views[1],
             &self.colour_view,
             &self.species_buffer,
+            &self.food_view,
         );
         self.blit_bind_group = create_blit_bind_group(
             device,
@@ -758,7 +871,7 @@ fn create_agents(
         .collect()
 }
 
-fn hash_u32(mut state: u32) -> u32 {
+pub(crate) fn hash_u32(mut state: u32) -> u32 {
     state = state.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
     state = ((state >> ((state >> 28).wrapping_add(4))) ^ state).wrapping_mul(277_803_737);
     (state >> 22) ^ state
@@ -876,6 +989,7 @@ fn create_diffuse_bind_groups(
     params: &wgpu::Buffer,
     trail_view_a: &wgpu::TextureView,
     trail_view_b: &wgpu::TextureView,
+    food_view: &wgpu::TextureView,
 ) -> [wgpu::BindGroup; 2] {
     let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("diffuse_bg_0"),
@@ -892,6 +1006,10 @@ fn create_diffuse_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::TextureView(trail_view_b),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(food_view),
             },
         ],
     });
@@ -911,11 +1029,16 @@ fn create_diffuse_bind_groups(
                 binding: 2,
                 resource: wgpu::BindingResource::TextureView(trail_view_a),
             },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(food_view),
+            },
         ],
     });
     [bg0, bg1]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_colour_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -924,6 +1047,7 @@ fn create_colour_bind_groups(
     trail_view_b: &wgpu::TextureView,
     colour_view: &wgpu::TextureView,
     species: &wgpu::Buffer,
+    food_view: &wgpu::TextureView,
 ) -> [wgpu::BindGroup; 2] {
     let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("colour_bg_0"),
@@ -944,6 +1068,10 @@ fn create_colour_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: species.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(food_view),
             },
         ],
     });
@@ -966,6 +1094,10 @@ fn create_colour_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: species.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(food_view),
             },
         ],
     });
@@ -1006,6 +1138,26 @@ mod tests {
             d += std::f32::consts::TAU;
         }
         (d - std::f32::consts::PI).abs()
+    }
+
+    #[test]
+    fn sim_params_size_is_aligned_to_16_bytes() {
+        let size = std::mem::size_of::<SimParams>();
+        assert_eq!(
+            size % 16,
+            0,
+            "SimParams size ({size}) must be a multiple of 16 for uniform buffer alignment"
+        );
+    }
+
+    #[test]
+    fn colour_params_size_is_aligned_to_16_bytes() {
+        let size = std::mem::size_of::<ColourParams>();
+        assert_eq!(
+            size % 16,
+            0,
+            "ColourParams size ({size}) must be a multiple of 16 for uniform buffer alignment"
+        );
     }
 
     #[rstest]

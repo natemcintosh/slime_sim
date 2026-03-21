@@ -110,10 +110,10 @@ const PALETTES_SEQUENTIAL: &[(&str, [[f32; 3]; 4])] = &[
     (
         "Desert",
         [
-            [0.149, 0.275, 0.325], // #264653 dark teal
-            [0.165, 0.616, 0.561], // #2a9d8f teal
-            [0.914, 0.769, 0.416], // #e9c46a sandy yellow
-            [0.906, 0.435, 0.318], // #e76f51 burnt orange
+            [0.149, 0.275, 0.325],  // #264653 dark teal
+            [0.165, 0.616, 0.561],  // #2a9d8f teal
+            [0.914, 0.769, 0.416],  // #e9c46a sandy yellow
+            [0.906, 0.435, 0.3176], // #e76f51 burnt orange
         ],
     ),
     (
@@ -175,6 +175,14 @@ pub struct UiState {
     pub available_configs: Vec<config_io::ConfigEntry>,
     pub selected_config_index: Option<usize>,
     pub load_status: Option<String>,
+    // Food / population density
+    pub food_weight: f32,
+    pub food_num_clumps: u32,
+    pub food_clump_radius: f32,
+    pub food_viz_weight: f32,
+    pub show_food: bool,
+    pub food_regen_requested: bool,
+    pub food_seed: u32,
 }
 
 impl Default for UiState {
@@ -234,6 +242,13 @@ impl Default for UiState {
             available_configs: Vec::new(),
             selected_config_index: None,
             load_status: None,
+            food_weight: 0.0,
+            food_num_clumps: 5,
+            food_clump_radius: 30.0,
+            food_viz_weight: 0.3,
+            show_food: true,
+            food_regen_requested: false,
+            food_seed: 42,
         }
     }
 }
@@ -376,6 +391,36 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                 );
                 state.num_agents = na;
 
+                ui.separator();
+                egui::CollapsingHeader::new("Food / Population Density")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut state.food_weight, 0.0..=1.0)
+                                .text("Food Weight"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut state.food_num_clumps, 1..=20)
+                                .text("Num Clumps"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut state.food_clump_radius, 5.0..=100.0)
+                                .text("Clump Radius"),
+                        );
+                        if ui.button("Regenerate Food").clicked() {
+                            state.food_seed = state.food_seed.wrapping_add(1);
+                            state.food_regen_requested = true;
+                        }
+                        ui.checkbox(&mut state.show_food, "Show Food Map");
+                        if state.show_food {
+                            ui.add(
+                                egui::Slider::new(&mut state.food_viz_weight, 0.0..=1.0)
+                                    .text("Food Visibility"),
+                            );
+                        }
+                    });
+
+                ui.separator();
                 if ui.button("Reset Simulation").clicked() {
                     state.reset_requested = true;
                 }
