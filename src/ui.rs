@@ -2,6 +2,86 @@ use egui::Context;
 
 use crate::config_io;
 
+/// Categorical palettes — distinct colors, best for telling species apart.
+const PALETTES_CATEGORICAL: &[(&str, [[f32; 3]; 4])] = &[
+    (
+        "Tableau 10",
+        [
+            [0.306, 0.475, 0.655], // #4e79a7 steel blue
+            [0.949, 0.557, 0.169], // #f28e2b tangerine
+            [0.882, 0.341, 0.349], // #e15759 brick red
+            [0.463, 0.718, 0.698], // #76b7b2 teal
+        ],
+    ),
+    (
+        "Okabe-Ito",
+        [
+            [0.902, 0.624, 0.000], // #e69f00 orange
+            [0.337, 0.706, 0.914], // #56b4e9 sky blue
+            [0.000, 0.620, 0.451], // #009e73 bluish green
+            [0.800, 0.475, 0.655], // #cc79a7 reddish purple
+        ],
+    ),
+    (
+        "Set 1",
+        [
+            [0.894, 0.102, 0.110], // #e41a1c red
+            [0.216, 0.494, 0.722], // #377eb8 blue
+            [0.302, 0.686, 0.290], // #4daf4a green
+            [0.596, 0.306, 0.639], // #984ea3 purple
+        ],
+    ),
+    (
+        "Dark 2",
+        [
+            [0.106, 0.620, 0.467], // #1b9e77 teal
+            [0.851, 0.373, 0.008], // #d95f02 orange
+            [0.459, 0.439, 0.702], // #7570b3 lilac
+            [0.906, 0.161, 0.541], // #e7298a magenta pink
+        ],
+    ),
+    (
+        "Neon",
+        [
+            [0.000, 1.000, 1.000], // cyan
+            [1.000, 0.200, 0.800], // hot pink
+            [0.200, 1.000, 0.200], // lime green
+            [1.000, 0.800, 0.000], // amber
+        ],
+    ),
+];
+
+/// Sequential palettes — colors sampled from perceptually-uniform gradients.
+const PALETTES_SEQUENTIAL: &[(&str, [[f32; 3]; 4])] = &[
+    (
+        "Viridis",
+        [
+            [0.267, 0.004, 0.329], // #440154 purple
+            [0.192, 0.400, 0.553], // #31688e teal-blue
+            [0.208, 0.718, 0.475], // #35b779 green
+            [0.992, 0.906, 0.141], // #fde724 yellow
+        ],
+    ),
+    (
+        "Plasma",
+        [
+            [0.416, 0.000, 0.659], // #6a00a8 violet
+            [0.800, 0.306, 0.471], // #cc4e78 hot pink
+            [0.973, 0.584, 0.251], // #f89540 orange
+            [0.941, 0.976, 0.129], // #f0f921 yellow
+        ],
+    ),
+    (
+        "Fire",
+        [
+            [0.600, 0.000, 0.000], // deep red
+            [1.000, 0.100, 0.000], // bright red
+            [1.000, 0.500, 0.000], // orange
+            [1.000, 1.000, 0.000], // yellow
+        ],
+    ),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SpawnMode {
     CentreCircle,
@@ -18,6 +98,7 @@ pub struct SpeciesUi {
     pub colour: [f32; 3],
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct UiState {
     pub num_species: u32,
     pub species: [SpeciesUi; 4],
@@ -103,6 +184,40 @@ impl Default for UiState {
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn palette_row(
+    ui: &mut egui::Ui,
+    name: &str,
+    colors: &[[f32; 3]; 4],
+    species: &mut [SpeciesUi; 4],
+) {
+    ui.horizontal(|ui| {
+        let mut apply = ui.small_button(name).clicked();
+        for &color in colors {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
+            if ui.is_rect_visible(rect) {
+                ui.painter().rect_filled(
+                    rect,
+                    2.0,
+                    egui::Color32::from_rgb(
+                        (color[0] * 255.0) as u8,
+                        (color[1] * 255.0) as u8,
+                        (color[2] * 255.0) as u8,
+                    ),
+                );
+            }
+            apply |= response.clicked();
+        }
+        if apply {
+            for (i, &color) in colors.iter().enumerate() {
+                species[i].colour = color;
+            }
+        }
+    });
+}
+
+#[allow(clippy::too_many_lines)]
 pub fn draw_ui(ctx: &Context, state: &mut UiState) {
     // Floating toggle button (top-left corner, always visible)
     egui::Area::new(egui::Id::new("panel_toggle"))
@@ -148,7 +263,24 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
 
                 let mut ns = state.num_species as usize;
                 ui.add(egui::Slider::new(&mut ns, 1..=4).text("Species Count"));
-                state.num_species = ns as u32;
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    state.num_species = ns as u32;
+                }
+
+                egui::CollapsingHeader::new("Palette Presets")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        ui.label("Categorical");
+                        for &(name, colors) in PALETTES_CATEGORICAL {
+                            palette_row(ui, name, &colors, &mut state.species);
+                        }
+                        ui.add_space(4.0);
+                        ui.label("Sequential");
+                        for &(name, colors) in PALETTES_SEQUENTIAL {
+                            palette_row(ui, name, &colors, &mut state.species);
+                        }
+                    });
 
                 for i in 0..state.num_species as usize {
                     ui.separator();
@@ -297,29 +429,29 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                     .add_enabled(can_load, egui::Button::new("Load"))
                     .clicked()
                 {
-                    if let Some(idx) = state.selected_config_index {
-                        let path = state.available_configs[idx].path.clone();
-                        let name = state.available_configs[idx].display_name.clone();
-                        match config_io::load_ui_state_from_xml(&path) {
-                            Ok(loaded) => {
-                                let panel_open = state.panel_open;
-                                let panel_width_points = state.panel_width_points;
-                                let fps = state.fps;
-                                let paused = state.paused;
+                    // Safe: button is disabled when selected_config_index is None
+                    let idx = state.selected_config_index.unwrap();
+                    let path = state.available_configs[idx].path.clone();
+                    let name = state.available_configs[idx].display_name.clone();
+                    match config_io::load_ui_state_from_xml(&path) {
+                        Ok(loaded) => {
+                            let panel_open = state.panel_open;
+                            let panel_width_points = state.panel_width_points;
+                            let fps = state.fps;
+                            let paused = state.paused;
 
-                                *state = loaded;
+                            *state = loaded;
 
-                                state.panel_open = panel_open;
-                                state.panel_width_points = panel_width_points;
-                                state.fps = fps;
-                                state.paused = paused;
-                                state.reset_requested = true;
-                                state.load_status = Some(format!("Loaded: {name}"));
-                                should_close = true;
-                            }
-                            Err(err) => {
-                                state.load_status = Some(format!("Error: {err}"));
-                            }
+                            state.panel_open = panel_open;
+                            state.panel_width_points = panel_width_points;
+                            state.fps = fps;
+                            state.paused = paused;
+                            state.reset_requested = true;
+                            state.load_status = Some(format!("Loaded: {name}"));
+                            should_close = true;
+                        }
+                        Err(err) => {
+                            state.load_status = Some(format!("Error: {err}"));
                         }
                     }
                 }
