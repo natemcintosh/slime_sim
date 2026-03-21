@@ -669,11 +669,6 @@ impl Simulation {
         );
     }
 
-    pub fn clear_food_map(&self, queue: &wgpu::Queue) {
-        let zeros = vec![0.0f32; (self.width * self.height) as usize];
-        self.upload_food_map(queue, &zeros);
-    }
-
     pub fn step(&mut self, encoder: &mut wgpu::CommandEncoder) {
         let read_idx = self.trail_idx;
         let write_idx = 1 - read_idx;
