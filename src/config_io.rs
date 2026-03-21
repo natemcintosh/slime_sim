@@ -1,11 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ui::{SpawnMode, UiState};
+use crate::ui::{SpawnMode, SpeciesUi, UiState};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename = "slime_config")]
 struct ConfigFile {
     #[serde(rename = "@version")]
@@ -14,14 +14,14 @@ struct ConfigFile {
     simulation: SimulationConfig,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Metadata {
     title: String,
     notes: String,
     saved_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct SimulationConfig {
     trail_weight: f32,
     decay_rate: f32,
@@ -34,7 +34,7 @@ struct SimulationConfig {
     species_list: Vec<SpeciesConfig>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct SpeciesConfig {
     move_speed: f32,
     turn_speed: f32,
@@ -44,7 +44,7 @@ struct SpeciesConfig {
     colour: ColourConfig,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ColourConfig {
     r: f32,
     g: f32,
@@ -130,6 +130,76 @@ fn current_unix_seconds() -> Result<u64, String> {
         .map_err(|e| format!("Clock error: {e}"))
 }
 
+fn string_to_spawn_mode(s: &str) -> Result<SpawnMode, String> {
+    match s {
+        "centre_circle" => Ok(SpawnMode::CentreCircle),
+        "random_fill" => Ok(SpawnMode::RandomFill),
+        "inward_circle" => Ok(SpawnMode::InwardCircle),
+        other => Err(format!("Unknown spawn mode: '{other}'")),
+    }
+}
+
+pub struct ConfigEntry {
+    pub path: PathBuf,
+    pub display_name: String,
+}
+
+pub fn list_config_files() -> Vec<ConfigEntry> {
+    let dir = PathBuf::from("configs");
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut configs: Vec<ConfigEntry> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "xml"))
+        .map(|e| {
+            let path = e.path();
+            let display_name = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            ConfigEntry { path, display_name }
+        })
+        .collect();
+
+    configs.sort_by(|a, b| b.display_name.cmp(&a.display_name));
+    configs
+}
+
+pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
+    let xml = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let config: ConfigFile =
+        quick_xml::de::from_str(&xml).map_err(|e| format!("Failed to parse XML: {e}"))?;
+
+    let sim = &config.simulation;
+    let spawn_mode = string_to_spawn_mode(&sim.spawn_mode)?;
+
+    let mut ui = UiState::default();
+    ui.trail_weight = sim.trail_weight;
+    ui.decay_rate = sim.decay_rate;
+    ui.diffuse_rate = sim.diffuse_rate;
+    ui.steps_per_frame = sim.steps_per_frame;
+    ui.spawn_mode = spawn_mode;
+    ui.num_agents = sim.num_agents;
+    ui.num_species = sim.num_species.min(4);
+
+    for (i, sc) in sim.species_list.iter().enumerate().take(4) {
+        ui.species[i] = SpeciesUi {
+            move_speed: sc.move_speed,
+            turn_speed: sc.turn_speed,
+            sensor_angle_deg: sc.sensor_angle_deg,
+            sensor_offset: sc.sensor_offset,
+            sensor_size: sc.sensor_size,
+            colour: [sc.colour.r, sc.colour.g, sc.colour.b],
+        };
+    }
+
+    Ok(ui)
+}
+
 fn sanitize_title_for_filename(title: &str) -> String {
     let mut out = String::with_capacity(title.len());
     let mut last_was_sep = false;
@@ -211,5 +281,54 @@ mod tests {
     #[case(SpawnMode::InwardCircle, "inward_circle")]
     fn spawn_mode_to_string_maps_all_variants(#[case] mode: SpawnMode, #[case] expected: &str) {
         assert_eq!(spawn_mode_to_string(mode), expected);
+    }
+
+    #[rstest]
+    #[case("centre_circle", SpawnMode::CentreCircle)]
+    #[case("random_fill", SpawnMode::RandomFill)]
+    #[case("inward_circle", SpawnMode::InwardCircle)]
+    fn string_to_spawn_mode_maps_all_variants(#[case] input: &str, #[case] expected: SpawnMode) {
+        assert_eq!(string_to_spawn_mode(input).unwrap(), expected);
+    }
+
+    #[test]
+    fn string_to_spawn_mode_rejects_unknown() {
+        assert!(string_to_spawn_mode("unknown").is_err());
+    }
+
+    #[test]
+    fn round_trip_save_then_load_preserves_simulation_params() {
+        let mut ui = UiState::default();
+        ui.num_species = 2;
+        ui.trail_weight = 7.5;
+        ui.spawn_mode = SpawnMode::InwardCircle;
+        ui.species[0].move_speed = 200.0;
+        ui.species[1].colour = [0.5, 0.6, 0.7];
+
+        let path = save_ui_state_to_xml(&ui, "round-trip-test", "").unwrap();
+        let loaded = load_ui_state_from_xml(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(loaded.num_species, 2);
+        assert!((loaded.trail_weight - 7.5).abs() < 0.01);
+        assert_eq!(loaded.spawn_mode, SpawnMode::InwardCircle);
+        assert!((loaded.species[0].move_speed - 200.0).abs() < 0.01);
+        assert!((loaded.species[1].colour[1] - 0.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn load_rejects_malformed_xml() {
+        let dir = PathBuf::from("configs");
+        fs::create_dir_all(&dir).ok();
+        let path = dir.join("__test_malformed.xml");
+        fs::write(&path, "<garbage>not valid</garbage>").ok();
+        let result = load_ui_state_from_xml(&path);
+        fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_config_files_does_not_panic() {
+        let _ = list_config_files();
     }
 }

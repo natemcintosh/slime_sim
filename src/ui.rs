@@ -2,7 +2,7 @@ use egui::Context;
 
 use crate::config_io;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SpawnMode {
     CentreCircle,
     RandomFill,
@@ -36,6 +36,10 @@ pub struct UiState {
     pub save_title: String,
     pub save_notes: String,
     pub save_status: Option<String>,
+    pub load_dialog_open: bool,
+    pub available_configs: Vec<config_io::ConfigEntry>,
+    pub selected_config_index: Option<usize>,
+    pub load_status: Option<String>,
 }
 
 impl Default for UiState {
@@ -91,6 +95,10 @@ impl Default for UiState {
             save_title: String::new(),
             save_notes: String::new(),
             save_status: None,
+            load_dialog_open: false,
+            available_configs: Vec::new(),
+            selected_config_index: None,
+            load_status: None,
         }
     }
 }
@@ -190,7 +198,21 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                     state.save_dialog_open = true;
                 }
 
+                if ui.button("Load Configuration").clicked() {
+                    state.available_configs = config_io::list_config_files();
+                    state.selected_config_index = None;
+                    state.load_dialog_open = true;
+                }
+
                 if let Some(status) = &state.save_status {
+                    if status.starts_with("Error:") {
+                        ui.colored_label(egui::Color32::RED, status);
+                    } else {
+                        ui.colored_label(egui::Color32::GREEN, status);
+                    }
+                }
+
+                if let Some(status) = &state.load_status {
                     if status.starts_with("Error:") {
                         ui.colored_label(egui::Color32::RED, status);
                     } else {
@@ -244,6 +266,73 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
             save_dialog_open = false;
         }
         state.save_dialog_open = save_dialog_open;
+    }
+
+    if state.load_dialog_open {
+        let mut load_dialog_open = state.load_dialog_open;
+        let mut should_close = false;
+
+        egui::Window::new("Load Configuration")
+            .open(&mut load_dialog_open)
+            .resizable(true)
+            .show(ctx, |ui| {
+                if state.available_configs.is_empty() {
+                    ui.label("No saved configurations found.");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for (i, entry) in state.available_configs.iter().enumerate() {
+                                let selected = state.selected_config_index == Some(i);
+                                if ui.selectable_label(selected, &entry.display_name).clicked() {
+                                    state.selected_config_index = Some(i);
+                                }
+                            }
+                        });
+                }
+
+                ui.separator();
+                let can_load = state.selected_config_index.is_some();
+                if ui
+                    .add_enabled(can_load, egui::Button::new("Load"))
+                    .clicked()
+                {
+                    if let Some(idx) = state.selected_config_index {
+                        let path = state.available_configs[idx].path.clone();
+                        let name = state.available_configs[idx].display_name.clone();
+                        match config_io::load_ui_state_from_xml(&path) {
+                            Ok(loaded) => {
+                                let panel_open = state.panel_open;
+                                let panel_width_points = state.panel_width_points;
+                                let fps = state.fps;
+                                let paused = state.paused;
+
+                                *state = loaded;
+
+                                state.panel_open = panel_open;
+                                state.panel_width_points = panel_width_points;
+                                state.fps = fps;
+                                state.paused = paused;
+                                state.reset_requested = true;
+                                state.load_status = Some(format!("Loaded: {name}"));
+                                should_close = true;
+                            }
+                            Err(err) => {
+                                state.load_status = Some(format!("Error: {err}"));
+                            }
+                        }
+                    }
+                }
+
+                if ui.button("Cancel").clicked() {
+                    should_close = true;
+                }
+            });
+
+        if should_close {
+            load_dialog_open = false;
+        }
+        state.load_dialog_open = load_dialog_open;
     }
 
     // Report panel width for viewport calculation
