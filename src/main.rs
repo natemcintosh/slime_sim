@@ -87,7 +87,11 @@ impl ApplicationHandler for App {
         self.gpu = Some(gpu);
     }
 
-    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss
+    )]
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -178,7 +182,9 @@ impl ApplicationHandler for App {
                         return;
                     }
                 };
-                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = output
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut encoder =
                     gpu.device
