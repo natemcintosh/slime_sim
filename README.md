@@ -23,6 +23,7 @@ All parameters are adjustable in real-time via the egui side panel:
 - **Trail Weight / Decay Rate / Diffuse Rate** — control pheromone intensity, fading, and spreading
 - **Steps / Frame** — computational steps per rendered frame (1–10)
 - **Species (1–4)** — each with independent move speed, turn speed, sensor angle/distance/size, and color
+- **Food Map** — Gaussian clumps of food that attract agents; configurable clump count, radius, weight, and seed
 - **Spawn Mode** — centre circle, random fill, or inward circle
 - **Agent Count** — 1,000 to 500,000 (logarithmic slider)
 - **Reset Simulation** — reinitialize with current settings

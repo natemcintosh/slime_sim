@@ -38,6 +38,7 @@ struct SpeciesSettings {
 @group(0) @binding(2) var trail_read: texture_2d<f32>;
 @group(0) @binding(3) var trail_write: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(4) var<storage, read> species: array<SpeciesSettings>;
+@group(0) @binding(5) var food_map: texture_2d<f32>;
 
 // Hash function for pseudo-random numbers
 fn hash(state_in: u32) -> u32 {
@@ -77,6 +78,10 @@ fn sense(agent: Agent, spec: SpeciesSettings, sensor_angle_offset: f32) -> f32 {
             let sample_y = min(i32(params.height) - 1, max(0, sensor_centre_y + offset_y));
             let sample = textureLoad(trail_read, vec2<i32>(sample_x, sample_y), 0);
             sum += dot(sense_weight, sample);
+
+            // Sense food directly — always positive, bypasses inter-species repulsion
+            let food_value = textureLoad(food_map, vec2<i32>(sample_x, sample_y), 0).r;
+            sum += food_value * params.food_weight;
         }
     }
     return sum;

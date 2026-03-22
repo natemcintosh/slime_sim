@@ -1,4 +1,4 @@
-// Trail diffusion shader: 3x3 blur + decay + food projection
+// Trail diffusion shader: 3x3 blur + decay
 
 struct SimParams {
     width: u32,
@@ -18,7 +18,6 @@ struct SimParams {
 @group(0) @binding(0) var<uniform> params: SimParams;
 @group(0) @binding(1) var trail_read: texture_2d<f32>;
 @group(0) @binding(2) var trail_write: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(3) var food_map: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -46,10 +45,5 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Decay
     let decayed = max(vec4<f32>(0.0), diffused - params.decay_rate * params.delta_time);
 
-    // Food projection: add food stimulus to all trail channels equally
-    let food_value = textureLoad(food_map, coord, 0).r;
-    let food_add = food_value * params.food_weight * params.delta_time;
-    let result = min(decayed + vec4<f32>(food_add), vec4<f32>(1.0));
-
-    textureStore(trail_write, coord, result);
+    textureStore(trail_write, coord, decayed);
 }
