@@ -6,7 +6,7 @@ GPU-accelerated slime mold simulation using [wgpu](https://wgpu.rs/). Thousands 
 
 ## Acknowledgments
 
-LLM translated from [Sebastian Lague's Slime Simulation](https://github.com/SebLague/Slime-Simulation), which is itself based on the paper:
+This is an LLM translation of [Sebastian Lague's Slime Simulation](https://github.com/SebLague/Slime-Simulation), which is itself based on the paper:
 
 > Jeff Jones, "Characteristics of Pattern Formation and Evolution in Approximations of *Physarum* Transport Networks," *Artificial Life*, 16(2), 127–153, 2010.
 
