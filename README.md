@@ -4,6 +4,14 @@ GPU-accelerated slime mold simulation using [wgpu](https://wgpu.rs/). Thousands 
 
 <!-- ![screenshot](screenshot.png) -->
 
+## Acknowledgments
+
+Inspired by [Sebastian Lague's Slime Simulation](https://github.com/SebLague/Slime-Simulation), which is itself based on the paper:
+
+> Jeff Jones, "Characteristics of Pattern Formation and Evolution in Approximations of *Physarum* Transport Networks," *Artificial Life*, 16(2), 127–153, 2010.
+
+The paper describes a multi-agent, chemotaxis-based model inspired by the slime mold *Physarum polycephalum*. Simple particle-like agents sense, turn, move, and deposit chemoattractant trails, producing emergent transport networks and complex patterns through diffusion and decay — no explicit global coordination required.
+
 ## Install
 
 ```sh
@@ -36,19 +44,7 @@ Requires a GPU with Vulkan, Metal, or DX12 support. Rust 1.85+ (edition 2024).
 
 https://github.com/user-attachments/assets/48091bcf-8f7f-4caf-8abb-91dfaaea4a78
 
-
-
 https://github.com/user-attachments/assets/b5109721-1b5e-41ce-84bb-8cb4d23a4a67
-
-
-
-## Acknowledgments
-
-Inspired by [Sebastian Lague's Slime Simulation](https://github.com/SebLague/Slime-Simulation), which is itself based on the paper:
-
-> Jeff Jones, "Characteristics of Pattern Formation and Evolution in Approximations of *Physarum* Transport Networks," *Artificial Life*, 16(2), 127–153, 2010.
-
-The paper describes a multi-agent, chemotaxis-based model inspired by the slime mold *Physarum polycephalum*. Simple particle-like agents sense, turn, move, and deposit chemoattractant trails, producing emergent transport networks and complex patterns through diffusion and decay — no explicit global coordination required.
 
 ## License
 
