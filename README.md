@@ -31,6 +31,17 @@ All parameters are adjustable in real-time via the egui side panel:
 
 Requires a GPU with Vulkan, Metal, or DX12 support. Rust 1.85+ (edition 2024).
 
+## Examples
+<img width="1920" height="1013" alt="Screenshot From 2026-03-22 11-37-09" src="https://github.com/user-attachments/assets/5172d661-cb77-415f-9ddf-59a18702d73c" />
+
+https://github.com/user-attachments/assets/48091bcf-8f7f-4caf-8abb-91dfaaea4a78
+
+
+
+https://github.com/user-attachments/assets/b5109721-1b5e-41ce-84bb-8cb4d23a4a67
+
+
+
 ## License
 
 MIT
