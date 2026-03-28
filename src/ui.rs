@@ -374,7 +374,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
 
                 for i in 0..state.num_species as usize {
                     ui.separator();
-                    ui.label(format!("Species {}", i + 1));
+                    let count = if state.competing_mode {
+                        state.population_counts[i]
+                    } else {
+                        state.num_agents / state.num_species
+                    };
+                    ui.label(format!("Species {} ({count} agents)", i + 1));
                     let s = &mut state.species[i];
                     ui.add(egui::Slider::new(&mut s.move_speed, 10.0..=300.0).text("Move Speed"));
                     ui.add(egui::Slider::new(&mut s.turn_speed, 0.1..=10.0).text("Turn Speed"));
