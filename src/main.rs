@@ -130,8 +130,8 @@ impl ApplicationHandler for App {
                         new_size.height,
                         &self.ui_state,
                     );
-                    // Re-upload food map at new dimensions
-                    if self.ui_state.food_weight > 0.0 {
+                    // Re-upload food map at new dimensions (classic mode only)
+                    if !self.ui_state.competing_mode && self.ui_state.food_weight > 0.0 {
                         let food_data = food::generate_food_map(
                             new_size.width,
                             new_size.height,
@@ -162,8 +162,8 @@ impl ApplicationHandler for App {
                 if self.ui_state.reset_requested {
                     self.ui_state.reset_requested = false;
                     sim.reset(&gpu.device, &gpu.queue, &self.ui_state);
-                    // Re-upload food map after reset
-                    if self.ui_state.food_weight > 0.0 {
+                    // Re-upload food map after reset (classic mode only)
+                    if !self.ui_state.competing_mode && self.ui_state.food_weight > 0.0 {
                         let food_data = food::generate_food_map(
                             sim.width,
                             sim.height,
@@ -175,17 +175,19 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Handle food regeneration
+                // Handle food regeneration (classic mode only)
                 if self.ui_state.food_regen_requested {
                     self.ui_state.food_regen_requested = false;
-                    let food_data = food::generate_food_map(
-                        sim.width,
-                        sim.height,
-                        self.ui_state.food_num_clumps,
-                        self.ui_state.food_clump_radius,
-                        self.ui_state.food_seed,
-                    );
-                    sim.upload_food_map(&gpu.queue, &food_data);
+                    if !self.ui_state.competing_mode {
+                        let food_data = food::generate_food_map(
+                            sim.width,
+                            sim.height,
+                            self.ui_state.food_num_clumps,
+                            self.ui_state.food_clump_radius,
+                            self.ui_state.food_seed,
+                        );
+                        sim.upload_food_map(&gpu.queue, &food_data);
+                    }
                 }
 
                 // Update params from UI
@@ -234,6 +236,11 @@ impl ApplicationHandler for App {
                     for _ in 0..self.ui_state.steps_per_frame {
                         sim.step(&mut encoder);
                     }
+                }
+
+                // Population readback (competing mode)
+                if self.ui_state.competing_mode && !self.ui_state.paused {
+                    sim.copy_population_to_readback(&mut encoder);
                 }
 
                 // Render simulation to screen (offset by panel width)
@@ -290,6 +297,11 @@ impl ApplicationHandler for App {
 
                 gpu.queue.submit(std::iter::once(encoder.finish()));
                 output.present();
+
+                // Read back population counts (competing mode)
+                if self.ui_state.competing_mode && !self.ui_state.paused {
+                    self.ui_state.population_counts = sim.read_population_counts(&gpu.device);
+                }
 
                 for id in &full_output.textures_delta.free {
                     egui_renderer.free_texture(id);

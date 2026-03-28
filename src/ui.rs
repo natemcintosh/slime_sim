@@ -183,6 +183,17 @@ pub struct UiState {
     pub show_food: bool,
     pub food_regen_requested: bool,
     pub food_seed: u32,
+    // Competing mode
+    pub competing_mode: bool,
+    pub initial_energy: f32,
+    pub move_energy_cost: f32,
+    pub deposit_energy_cost: f32,
+    pub energy_per_food: f32,
+    pub food_eat_rate: f32,
+    pub food_regen_rate: f32,
+    pub food_clump_lifetime: f32,
+    pub reproduction_threshold: f32,
+    pub population_counts: [u32; 4],
 }
 
 impl Default for UiState {
@@ -249,6 +260,16 @@ impl Default for UiState {
             show_food: true,
             food_regen_requested: false,
             food_seed: 42,
+            competing_mode: false,
+            initial_energy: 1.0,
+            move_energy_cost: 0.001,
+            deposit_energy_cost: 0.0005,
+            energy_per_food: 0.5,
+            food_eat_rate: 0.1,
+            food_regen_rate: 0.01,
+            food_clump_lifetime: 30.0,
+            reproduction_threshold: 2.0,
+            population_counts: [0; 4],
         }
     }
 }
@@ -407,7 +428,7 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                             egui::Slider::new(&mut state.food_clump_radius, 5.0..=100.0)
                                 .text("Clump Radius"),
                         );
-                        if ui.button("Regenerate Food").clicked() {
+                        if !state.competing_mode && ui.button("Regenerate Food").clicked() {
                             state.food_seed = state.food_seed.wrapping_add(1);
                             state.food_regen_requested = true;
                         }
@@ -417,6 +438,63 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                                 egui::Slider::new(&mut state.food_viz_weight, 0.0..=1.0)
                                     .text("Food Visibility"),
                             );
+                        }
+                    });
+
+                ui.separator();
+                egui::CollapsingHeader::new("Competing Mode")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let prev_mode = state.competing_mode;
+                        ui.checkbox(&mut state.competing_mode, "Enable Competing Mode");
+                        if state.competing_mode != prev_mode {
+                            state.reset_requested = true;
+                        }
+
+                        if state.competing_mode {
+                            ui.add(
+                                egui::Slider::new(&mut state.initial_energy, 0.1..=10.0)
+                                    .text("Initial Energy"),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.move_energy_cost, 0.0001..=0.01)
+                                    .text("Move Energy Cost")
+                                    .logarithmic(true),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.deposit_energy_cost, 0.0..=0.01)
+                                    .text("Deposit Energy Cost")
+                                    .logarithmic(true),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.energy_per_food, 0.01..=5.0)
+                                    .text("Energy per Food"),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.food_eat_rate, 0.001..=1.0)
+                                    .text("Food Eat Rate")
+                                    .logarithmic(true),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.food_regen_rate, 0.001..=0.5)
+                                    .text("Food Regen Rate")
+                                    .logarithmic(true),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.food_clump_lifetime, 5.0..=120.0)
+                                    .text("Clump Lifetime (s)"),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut state.reproduction_threshold, 0.5..=10.0)
+                                    .text("Reproduction Threshold"),
+                            );
+
+                            ui.separator();
+                            ui.label("Population");
+                            for i in 0..state.num_species as usize {
+                                let count = state.population_counts[i];
+                                ui.label(format!("  Species {}: {count}", i + 1));
+                            }
                         }
                     });
 

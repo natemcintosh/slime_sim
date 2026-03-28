@@ -42,6 +42,24 @@ struct SimulationConfig {
     food_viz_weight: f32,
     #[serde(default = "default_true")]
     show_food: bool,
+    #[serde(default)]
+    competing_mode: bool,
+    #[serde(default = "default_initial_energy")]
+    initial_energy: f32,
+    #[serde(default = "default_move_energy_cost")]
+    move_energy_cost: f32,
+    #[serde(default = "default_deposit_energy_cost")]
+    deposit_energy_cost: f32,
+    #[serde(default = "default_energy_per_food")]
+    energy_per_food: f32,
+    #[serde(default = "default_food_eat_rate")]
+    food_eat_rate: f32,
+    #[serde(default = "default_food_regen_rate")]
+    food_regen_rate: f32,
+    #[serde(default = "default_food_clump_lifetime")]
+    food_clump_lifetime: f32,
+    #[serde(default = "default_reproduction_threshold")]
+    reproduction_threshold: f32,
 }
 
 fn default_food_num_clumps() -> u32 {
@@ -55,6 +73,30 @@ fn default_food_viz_weight() -> f32 {
 }
 fn default_true() -> bool {
     true
+}
+fn default_initial_energy() -> f32 {
+    1.0
+}
+fn default_move_energy_cost() -> f32 {
+    0.001
+}
+fn default_deposit_energy_cost() -> f32 {
+    0.0005
+}
+fn default_energy_per_food() -> f32 {
+    0.5
+}
+fn default_food_eat_rate() -> f32 {
+    0.1
+}
+fn default_food_regen_rate() -> f32 {
+    0.01
+}
+fn default_food_clump_lifetime() -> f32 {
+    30.0
+}
+fn default_reproduction_threshold() -> f32 {
+    2.0
 }
 
 #[derive(Serialize, Deserialize)]
@@ -140,6 +182,15 @@ fn build_config(title: &str, notes: &str, ui: &UiState, timestamp: u64) -> Confi
             food_clump_radius: ui.food_clump_radius,
             food_viz_weight: ui.food_viz_weight,
             show_food: ui.show_food,
+            competing_mode: ui.competing_mode,
+            initial_energy: ui.initial_energy,
+            move_energy_cost: ui.move_energy_cost,
+            deposit_energy_cost: ui.deposit_energy_cost,
+            energy_per_food: ui.energy_per_food,
+            food_eat_rate: ui.food_eat_rate,
+            food_regen_rate: ui.food_regen_rate,
+            food_clump_lifetime: ui.food_clump_lifetime,
+            reproduction_threshold: ui.reproduction_threshold,
         },
     }
 }
@@ -220,6 +271,15 @@ pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
     ui.food_clump_radius = sim.food_clump_radius;
     ui.food_viz_weight = sim.food_viz_weight;
     ui.show_food = sim.show_food;
+    ui.competing_mode = sim.competing_mode;
+    ui.initial_energy = sim.initial_energy;
+    ui.move_energy_cost = sim.move_energy_cost;
+    ui.deposit_energy_cost = sim.deposit_energy_cost;
+    ui.energy_per_food = sim.energy_per_food;
+    ui.food_eat_rate = sim.food_eat_rate;
+    ui.food_regen_rate = sim.food_regen_rate;
+    ui.food_clump_lifetime = sim.food_clump_lifetime;
+    ui.reproduction_threshold = sim.reproduction_threshold;
 
     for (i, sc) in sim.species_list.iter().enumerate().take(4) {
         ui.species[i] = SpeciesUi {

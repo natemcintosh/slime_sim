@@ -11,6 +11,8 @@ pub struct Agent {
     pub position: [f32; 2],
     pub angle: f32,
     pub species_index: u32,
+    pub energy: f32,
+    pub _padding: u32,
 }
 
 #[repr(C)]
@@ -25,7 +27,18 @@ pub struct SimParams {
     pub delta_time: f32,
     pub time: f32,
     pub food_weight: f32,
-    pub _pad: [u32; 3],
+    pub competing_mode: u32,
+    pub initial_energy: f32,
+    pub move_energy_cost: f32,
+    pub deposit_energy_cost: f32,
+    pub energy_per_food: f32,
+    pub food_eat_rate: f32,
+    pub food_regen_rate: f32,
+    pub food_clump_lifetime: f32,
+    pub reproduction_threshold: f32,
+    pub food_num_clumps: u32,
+    pub food_clump_radius: f32,
+    pub _pad: [u32; 4],
 }
 
 #[repr(C)]
@@ -38,6 +51,34 @@ pub struct SpeciesSettings {
     pub sensor_size: i32,
     pub _pad: [u32; 3],
     pub colour: [f32; 4],
+}
+
+impl SimParams {
+    fn from_ui(ui: &UiState, width: u32, height: u32, dt: f32, time: f32) -> Self {
+        Self {
+            width,
+            height,
+            num_agents: ui.num_agents,
+            trail_weight: ui.trail_weight,
+            decay_rate: ui.decay_rate,
+            diffuse_rate: ui.diffuse_rate,
+            delta_time: dt,
+            time,
+            food_weight: ui.food_weight,
+            competing_mode: u32::from(ui.competing_mode),
+            initial_energy: ui.initial_energy,
+            move_energy_cost: ui.move_energy_cost,
+            deposit_energy_cost: ui.deposit_energy_cost,
+            energy_per_food: ui.energy_per_food,
+            food_eat_rate: ui.food_eat_rate,
+            food_regen_rate: ui.food_regen_rate,
+            food_clump_lifetime: ui.food_clump_lifetime,
+            reproduction_threshold: ui.reproduction_threshold,
+            food_num_clumps: ui.food_num_clumps,
+            food_clump_radius: ui.food_clump_radius,
+            _pad: [0; 4],
+        }
+    }
 }
 
 #[repr(C)]
@@ -73,14 +114,19 @@ pub struct Simulation {
     colour_view: wgpu::TextureView,
 
     // Food / population density map
-    #[allow(dead_code)]
     food_texture: wgpu::Texture,
     food_view: wgpu::TextureView,
+    food_buffer: wgpu::Buffer,
+
+    // Population tracking (competing mode)
+    population_buffer: wgpu::Buffer,
+    population_readback_buffer: wgpu::Buffer,
 
     // Compute pipelines
     update_pipeline: wgpu::ComputePipeline,
     diffuse_pipeline: wgpu::ComputePipeline,
     colour_pipeline: wgpu::ComputePipeline,
+    food_regen_pipeline: wgpu::ComputePipeline,
 
     // Render pipeline (blit)
     blit_pipeline: wgpu::RenderPipeline,
@@ -90,12 +136,14 @@ pub struct Simulation {
     diffuse_bgl: wgpu::BindGroupLayout,
     colour_bgl: wgpu::BindGroupLayout,
     blit_bgl: wgpu::BindGroupLayout,
+    food_regen_bgl: wgpu::BindGroupLayout,
 
     // Bind groups
     update_bind_groups: [wgpu::BindGroup; 2],
     diffuse_bind_groups: [wgpu::BindGroup; 2],
     colour_bind_groups: [wgpu::BindGroup; 2],
     blit_bind_group: wgpu::BindGroup,
+    food_regen_bind_group: wgpu::BindGroup,
 
     // Sampler for blit
     blit_sampler: wgpu::Sampler,
@@ -103,6 +151,7 @@ pub struct Simulation {
     // State
     num_agents: u32,
     elapsed_time: f32,
+    competing_mode: bool,
 }
 
 impl Simulation {
@@ -116,7 +165,14 @@ impl Simulation {
         ui: &UiState,
     ) -> Self {
         // --- Create agent data ---
-        let agents = create_agents(ui.num_agents, ui.num_species, width, height, ui.spawn_mode);
+        let agents = create_agents(
+            ui.num_agents,
+            ui.num_species,
+            width,
+            height,
+            ui.spawn_mode,
+            ui.initial_energy,
+        );
 
         let agent_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("agent_buffer"),
@@ -125,18 +181,7 @@ impl Simulation {
         });
 
         // --- SimParams uniform ---
-        let params = SimParams {
-            width,
-            height,
-            num_agents: ui.num_agents,
-            trail_weight: ui.trail_weight,
-            decay_rate: ui.decay_rate,
-            diffuse_rate: ui.diffuse_rate,
-            delta_time: 1.0 / 60.0,
-            time: 0.0,
-            food_weight: ui.food_weight,
-            _pad: [0; 3],
-        };
+        let params = SimParams::from_ui(ui, width, height, 1.0 / 60.0, 0.0);
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params_buffer"),
             contents: bytemuck::bytes_of(&params),
@@ -228,6 +273,33 @@ impl Simulation {
             },
         );
 
+        // --- Food storage buffer (for competing mode read-write access) ---
+        let food_buffer_size = (width * height) as u64 * 4;
+        let food_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("food_buffer"),
+            size: food_buffer_size,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // --- Population tracking buffer (competing mode) ---
+        let population_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("population_buffer"),
+            size: 16, // 4 x u32
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let population_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("population_readback_buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // --- Colour map ---
         let colour_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("colour_texture"),
@@ -261,6 +333,10 @@ impl Simulation {
         let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("blit_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/blit.wgsl").into()),
+        });
+        let food_regen_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("food_regen_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/food_regen.wgsl").into()),
         });
 
         // --- Bind group layouts ---
@@ -330,6 +406,28 @@ impl Simulation {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
+                    },
+                    count: None,
+                },
+                // food_buffer storage (competing mode)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // population counters (competing mode)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -497,6 +595,48 @@ impl Simulation {
             cache: None,
         });
 
+        // --- Food regen pipeline (competing mode) ---
+        let food_regen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("food_regen_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let food_regen_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("food_regen_pipeline_layout"),
+                bind_group_layouts: &[&food_regen_bgl],
+                push_constant_ranges: &[],
+            });
+        let food_regen_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("food_regen_pipeline"),
+                layout: Some(&food_regen_pipeline_layout),
+                module: &food_regen_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
         // --- Render pipeline (blit) ---
         let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blit_pipeline_layout"),
@@ -550,6 +690,8 @@ impl Simulation {
             &trail_view_b,
             &species_buffer,
             &food_view,
+            &food_buffer,
+            &population_buffer,
         );
 
         let diffuse_bind_groups = create_diffuse_bind_groups(
@@ -574,6 +716,21 @@ impl Simulation {
         let blit_bind_group =
             create_blit_bind_group(device, &blit_bgl, &colour_view, &blit_sampler);
 
+        let food_regen_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("food_regen_bg"),
+            layout: &food_regen_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: food_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         Self {
             width,
             height,
@@ -588,38 +745,35 @@ impl Simulation {
             colour_view,
             food_texture,
             food_view,
+            food_buffer,
+            population_buffer,
+            population_readback_buffer,
             update_pipeline,
             diffuse_pipeline,
             colour_pipeline,
+            food_regen_pipeline,
             blit_pipeline,
             update_bgl,
             diffuse_bgl,
             colour_bgl,
             blit_bgl,
+            food_regen_bgl,
             update_bind_groups,
             diffuse_bind_groups,
             colour_bind_groups,
             blit_bind_group,
+            food_regen_bind_group,
             blit_sampler,
             num_agents: ui.num_agents,
             elapsed_time: 0.0,
+            competing_mode: ui.competing_mode,
         }
     }
 
     pub fn update_params(&mut self, queue: &wgpu::Queue, ui: &UiState, dt: f32) {
         self.elapsed_time += dt;
-        let params = SimParams {
-            width: self.width,
-            height: self.height,
-            num_agents: self.num_agents,
-            trail_weight: ui.trail_weight,
-            decay_rate: ui.decay_rate,
-            diffuse_rate: ui.diffuse_rate,
-            delta_time: dt,
-            time: self.elapsed_time,
-            food_weight: ui.food_weight,
-            _pad: [0; 3],
-        };
+        self.competing_mode = ui.competing_mode;
+        let params = SimParams::from_ui(ui, self.width, self.height, dt, self.elapsed_time);
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
         let species_data = build_species_data(ui);
@@ -669,9 +823,50 @@ impl Simulation {
         );
     }
 
+    pub fn copy_population_to_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.copy_buffer_to_buffer(
+            &self.population_buffer,
+            0,
+            &self.population_readback_buffer,
+            0,
+            16,
+        );
+    }
+
+    pub fn read_population_counts(&self, device: &wgpu::Device) -> [u32; 4] {
+        let slice = self.population_readback_buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        let data = slice.get_mapped_range();
+        let counts: &[u32] = bytemuck::cast_slice(&data);
+        let result = [counts[0], counts[1], counts[2], counts[3]];
+        drop(data);
+        self.population_readback_buffer.unmap();
+        result
+    }
+
     pub fn step(&mut self, encoder: &mut wgpu::CommandEncoder) {
         let read_idx = self.trail_idx;
         let write_idx = 1 - read_idx;
+
+        if self.competing_mode {
+            // Clear population counters
+            encoder.clear_buffer(&self.population_buffer, 0, None);
+
+            // Food regeneration pass
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("food_regen_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.food_regen_pipeline);
+                pass.set_bind_group(0, &self.food_regen_bind_group, &[]);
+                pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
+            }
+        }
 
         // Update agents (sense, steer, move, deposit)
         {
@@ -680,7 +875,6 @@ impl Simulation {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.update_pipeline);
-            // Bind group index: read_idx reads from trail[read_idx], writes to trail[write_idx]
             pass.set_bind_group(0, &self.update_bind_groups[read_idx], &[]);
             pass.dispatch_workgroups(self.num_agents.div_ceil(256), 1, 1);
         }
@@ -692,9 +886,33 @@ impl Simulation {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.diffuse_pipeline);
-            // After update: trail[write_idx] has the deposits. Diffuse reads write_idx, writes read_idx
             pass.set_bind_group(0, &self.diffuse_bind_groups[write_idx], &[]);
             pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
+        }
+
+        if self.competing_mode {
+            // Copy food_buffer -> food_texture for visualization
+            encoder.copy_buffer_to_texture(
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &self.food_buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(self.width * 4),
+                        rows_per_image: Some(self.height),
+                    },
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.food_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         // Swap: after diffuse, the "fresh" data is in trail[read_idx], so next frame read_idx flips
@@ -761,6 +979,7 @@ impl Simulation {
             self.width,
             self.height,
             ui.spawn_mode,
+            ui.initial_energy,
         );
         let agent_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("agent_buffer"),
@@ -773,6 +992,15 @@ impl Simulation {
         clear_texture(queue, &self.trail_textures[0], self.width, self.height);
         clear_texture(queue, &self.trail_textures[1], self.width, self.height);
 
+        // Clear food buffer
+        queue.write_buffer(
+            &self.food_buffer,
+            0,
+            bytemuck::cast_slice(&vec![0.0f32; (self.width * self.height) as usize]),
+        );
+
+        self.competing_mode = ui.competing_mode;
+
         // Recreate bind groups (agent buffer changed)
         self.update_bind_groups = create_update_bind_groups(
             device,
@@ -783,6 +1011,8 @@ impl Simulation {
             &self.trail_views[1],
             &self.species_buffer,
             &self.food_view,
+            &self.food_buffer,
+            &self.population_buffer,
         );
         self.diffuse_bind_groups = create_diffuse_bind_groups(
             device,
@@ -807,6 +1037,20 @@ impl Simulation {
             &self.colour_view,
             &self.blit_sampler,
         );
+        self.food_regen_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("food_regen_bg"),
+            layout: &self.food_regen_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.food_buffer.as_entire_binding(),
+                },
+            ],
+        });
     }
 }
 
@@ -819,6 +1063,7 @@ fn create_agents(
     width: u32,
     height: u32,
     mode: SpawnMode,
+    initial_energy: f32,
 ) -> Vec<Agent> {
     let cx = width as f32 / 2.0;
     let cy = height as f32 / 2.0;
@@ -841,12 +1086,16 @@ fn create_agents(
                         position: [cx + angle.cos() * r, cy + angle.sin() * r],
                         angle: r1 * std::f32::consts::TAU,
                         species_index,
+                        energy: initial_energy,
+                        _padding: 0,
                     }
                 }
                 SpawnMode::RandomFill => Agent {
                     position: [r1 * width as f32, r2 * height as f32],
                     angle: r1 * std::f32::consts::TAU,
                     species_index,
+                    energy: initial_energy,
+                    _padding: 0,
                 },
                 SpawnMode::InwardCircle => {
                     let angle = r1 * std::f32::consts::TAU;
@@ -859,6 +1108,8 @@ fn create_agents(
                         position: [px, py],
                         angle: inward,
                         species_index,
+                        energy: initial_energy,
+                        _padding: 0,
                     }
                 }
             }
@@ -912,6 +1163,7 @@ fn clear_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, width: u32, heigh
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_update_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -921,6 +1173,8 @@ fn create_update_bind_groups(
     trail_view_b: &wgpu::TextureView,
     species: &wgpu::Buffer,
     food_view: &wgpu::TextureView,
+    food_buffer: &wgpu::Buffer,
+    population_buffer: &wgpu::Buffer,
 ) -> [wgpu::BindGroup; 2] {
     // Group 0: read A, write B
     let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -950,6 +1204,14 @@ fn create_update_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::TextureView(food_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: food_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: population_buffer.as_entire_binding(),
             },
         ],
     });
@@ -981,6 +1243,14 @@ fn create_update_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::TextureView(food_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: food_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: population_buffer.as_entire_binding(),
             },
         ],
     });
@@ -1136,6 +1406,15 @@ mod tests {
     }
 
     #[test]
+    fn agent_size_is_24_bytes() {
+        assert_eq!(
+            std::mem::size_of::<Agent>(),
+            24,
+            "Agent must be 24 bytes (padded for WGSL vec2 alignment)"
+        );
+    }
+
+    #[test]
     fn sim_params_size_is_aligned_to_16_bytes() {
         let size = std::mem::size_of::<SimParams>();
         assert_eq!(
@@ -1188,8 +1467,8 @@ mod tests {
         let width = 640;
         let height = 480;
 
-        let first = create_agents(num_agents, num_species, width, height, mode);
-        let second = create_agents(num_agents, num_species, width, height, mode);
+        let first = create_agents(num_agents, num_species, width, height, mode, 1.0);
+        let second = create_agents(num_agents, num_species, width, height, mode, 1.0);
 
         assert_eq!(first.len(), num_agents as usize);
         assert_eq!(second.len(), num_agents as usize);
@@ -1205,7 +1484,7 @@ mod tests {
     fn create_agents_random_fill_stays_within_bounds() {
         let width = 320;
         let height = 200;
-        let agents = create_agents(1000, 4, width, height, SpawnMode::RandomFill);
+        let agents = create_agents(1000, 4, width, height, SpawnMode::RandomFill, 1.0);
 
         for agent in agents {
             assert!(agent.position[0] >= 0.0 && agent.position[0] <= width as f32);
@@ -1222,7 +1501,7 @@ mod tests {
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
         let radius = cx.min(cy) * 0.4;
-        let agents = create_agents(1000, 4, width, height, mode);
+        let agents = create_agents(1000, 4, width, height, mode, 1.0);
 
         for agent in agents {
             let dx = agent.position[0] - cx;
@@ -1238,7 +1517,7 @@ mod tests {
         let height = 600;
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
-        let agents = create_agents(1000, 2, width, height, SpawnMode::InwardCircle);
+        let agents = create_agents(1000, 2, width, height, SpawnMode::InwardCircle, 1.0);
 
         for agent in agents {
             let to_center_x = cx - agent.position[0];

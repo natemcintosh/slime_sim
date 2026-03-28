@@ -4,6 +4,8 @@ struct Agent {
     position: vec2<f32>,
     angle: f32,
     species_index: u32,
+    energy: f32,
+    _padding: u32,
 }
 
 struct SimParams {
@@ -16,9 +18,21 @@ struct SimParams {
     delta_time: f32,
     time: f32,
     food_weight: f32,
+    competing_mode: u32,
+    initial_energy: f32,
+    move_energy_cost: f32,
+    deposit_energy_cost: f32,
+    energy_per_food: f32,
+    food_eat_rate: f32,
+    food_regen_rate: f32,
+    food_clump_lifetime: f32,
+    reproduction_threshold: f32,
+    food_num_clumps: u32,
+    food_clump_radius: f32,
     _pad0: u32,
     _pad1: u32,
     _pad2: u32,
+    _pad3: u32,
 }
 
 struct SpeciesSettings {
@@ -39,6 +53,8 @@ struct SpeciesSettings {
 @group(0) @binding(3) var trail_write: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(4) var<storage, read> species: array<SpeciesSettings>;
 @group(0) @binding(5) var food_map: texture_2d<f32>;
+@group(0) @binding(6) var<storage, read_write> food_buffer: array<f32>;
+@group(0) @binding(7) var<storage, read_write> population: array<atomic<u32>, 4>;
 
 // Hash function for pseudo-random numbers
 fn hash(state_in: u32) -> u32 {
@@ -79,9 +95,15 @@ fn sense(agent: Agent, spec: SpeciesSettings, sensor_angle_offset: f32) -> f32 {
             let sample = textureLoad(trail_read, vec2<i32>(sample_x, sample_y), 0);
             sum += dot(sense_weight, sample);
 
-            // Sense food directly — always positive, bypasses inter-species repulsion
-            let food_value = textureLoad(food_map, vec2<i32>(sample_x, sample_y), 0).r;
-            sum += food_value * params.food_weight;
+            // Sense food — always positive, bypasses inter-species repulsion
+            if (params.competing_mode != 0u) {
+                let food_idx = u32(sample_y) * params.width + u32(sample_x);
+                let food_value = food_buffer[food_idx];
+                sum += food_value * params.food_weight;
+            } else {
+                let food_value = textureLoad(food_map, vec2<i32>(sample_x, sample_y), 0).r;
+                sum += food_value * params.food_weight;
+            }
         }
     }
     return sum;
@@ -95,6 +117,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var agent = agents[idx];
+
+    // In competing mode, skip dead agents
+    if (params.competing_mode != 0u) {
+        if (agent.energy <= 0.0) {
+            return;
+        }
+        atomicAdd(&population[agent.species_index], 1u);
+    }
+
     let spec = species[agent.species_index];
 
     // Random number generation
@@ -138,13 +169,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     agent.position = new_pos;
 
-    agents[idx] = agent;
+    // Energy cost for movement (competing mode)
+    if (params.competing_mode != 0u) {
+        agent.energy -= params.move_energy_cost * params.delta_time;
+    }
 
     // Deposit pheromone
     let coord = vec2<i32>(i32(agent.position.x), i32(agent.position.y));
     let old_trail = textureLoad(trail_read, coord, 0);
 
-    // Deposit into the species channel
     var deposit = vec4<f32>(0.0);
     if (agent.species_index == 0u) {
         deposit.x = params.trail_weight * params.delta_time;
@@ -158,4 +191,37 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     let new_trail = min(old_trail + deposit, vec4<f32>(1.0));
     textureStore(trail_write, coord, new_trail);
+
+    // Energy cost for trail deposition (competing mode)
+    if (params.competing_mode != 0u) {
+        agent.energy -= params.deposit_energy_cost * params.delta_time;
+
+        // Eat food at current position
+        let food_idx = u32(agent.position.y) * params.width + u32(agent.position.x);
+        let current_food = food_buffer[food_idx];
+        let eat_amount = min(current_food, params.food_eat_rate * params.delta_time);
+        food_buffer[food_idx] = current_food - eat_amount;
+        agent.energy += eat_amount * params.energy_per_food;
+
+        // Death check
+        if (agent.energy <= 0.0) {
+            agent.energy = 0.0;
+        }
+
+        // Reproduction
+        if (agent.energy > params.reproduction_threshold) {
+            let candidate_idx = (idx + 7919u) % params.num_agents;
+            var candidate = agents[candidate_idx];
+            if (candidate.energy <= 0.0) {
+                candidate.position = agent.position;
+                candidate.angle = agent.angle + 3.14159265;
+                candidate.species_index = agent.species_index;
+                candidate.energy = agent.energy * 0.5;
+                agent.energy = agent.energy * 0.5;
+                agents[candidate_idx] = candidate;
+            }
+        }
+    }
+
+    agents[idx] = agent;
 }
