@@ -224,46 +224,35 @@ impl Simulation {
         });
 
         // --- Trail textures (ping-pong) ---
-        let trail_desc = wgpu::TextureDescriptor {
-            label: Some("trail_texture"),
-            size: wgpu::Extent3d {
+        let trail_textures: [wgpu::Texture; 2] = std::array::from_fn(|_| {
+            create_texture(
+                device,
+                "trail_texture",
                 width,
                 height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::STORAGE_BINDING
-                | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        };
-        let trail_a = device.create_texture(&trail_desc);
-        let trail_b = device.create_texture(&trail_desc);
-        let trail_view_a = trail_a.create_view(&wgpu::TextureViewDescriptor::default());
-        let trail_view_b = trail_b.create_view(&wgpu::TextureViewDescriptor::default());
+                wgpu::TextureFormat::Rgba16Float,
+                wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::STORAGE_BINDING
+                    | wgpu::TextureUsages::COPY_DST,
+            )
+        });
+        let trail_views = trail_textures
+            .each_ref()
+            .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
 
         // Clear trail textures
-        clear_texture(queue, &trail_a, width, height);
-        clear_texture(queue, &trail_b, width, height);
+        clear_texture(queue, &trail_textures[0], width, height);
+        clear_texture(queue, &trail_textures[1], width, height);
 
         // --- Food texture ---
-        let food_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("food_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
+        let food_texture = create_texture(
+            device,
+            "food_texture",
+            width,
+            height,
+            wgpu::TextureFormat::R32Float,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
         let food_view = food_texture.create_view(&wgpu::TextureViewDescriptor::default());
         // Initialize food texture to zeros
         let food_zeros = vec![0.0f32; (width * height) as usize];
@@ -315,229 +304,57 @@ impl Simulation {
         });
 
         // --- Colour map ---
-        let colour_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("colour_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
-        });
+        let colour_texture = create_texture(
+            device,
+            "colour_texture",
+            width,
+            height,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+        );
         let colour_view = colour_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // --- Shader modules ---
-        let update_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("update_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/update.wgsl").into()),
-        });
-        let diffuse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("diffuse_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/diffuse.wgsl").into()),
-        });
-        let colour_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("colour_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/colour.wgsl").into()),
-        });
-        let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("blit_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/blit.wgsl").into()),
-        });
-        let food_regen_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("food_regen_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/food_regen.wgsl").into()),
-        });
 
         // --- Bind group layouts ---
         let update_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("update_bgl"),
             entries: &[
                 // params uniform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                uniform_entry(0),
                 // agents storage
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_buffer_entry(1, false),
                 // trail_read texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(2),
                 // trail_write storage texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
+                storage_texture_entry(3, wgpu::TextureFormat::Rgba16Float),
                 // species storage
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_buffer_entry(4, true),
                 // food_map texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(5),
                 // food_buffer storage (competing mode)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_buffer_entry(6, false),
                 // population counters (competing mode)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_buffer_entry(7, false),
             ],
         });
 
         let diffuse_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("diffuse_bgl"),
             entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
+                uniform_entry(0),
+                texture_entry(1),
+                storage_texture_entry(2, wgpu::TextureFormat::Rgba16Float),
             ],
         });
 
         let colour_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("colour_bgl"),
             entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                uniform_entry(0),
+                texture_entry(1),
+                storage_texture_entry(2, wgpu::TextureFormat::Rgba8Unorm),
+                storage_buffer_entry(3, true),
                 // food_map texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(4),
             ],
         });
 
@@ -564,94 +381,42 @@ impl Simulation {
         });
 
         // --- Compute pipelines ---
-        let update_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("update_pipeline_layout"),
-                bind_group_layouts: &[&update_bgl],
-                push_constant_ranges: &[],
-            });
-        let update_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("update_pipeline"),
-            layout: Some(&update_pipeline_layout),
-            module: &update_shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-
-        let diffuse_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("diffuse_pipeline_layout"),
-                bind_group_layouts: &[&diffuse_bgl],
-                push_constant_ranges: &[],
-            });
-        let diffuse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("diffuse_pipeline"),
-            layout: Some(&diffuse_pipeline_layout),
-            module: &diffuse_shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-
-        let colour_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("colour_pipeline_layout"),
-                bind_group_layouts: &[&colour_bgl],
-                push_constant_ranges: &[],
-            });
-        let colour_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("colour_pipeline"),
-            layout: Some(&colour_pipeline_layout),
-            module: &colour_shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let update_pipeline = create_compute_pipeline(
+            device,
+            "update",
+            include_str!("shaders/update.wgsl"),
+            &update_bgl,
+        );
+        let diffuse_pipeline = create_compute_pipeline(
+            device,
+            "diffuse",
+            include_str!("shaders/diffuse.wgsl"),
+            &diffuse_bgl,
+        );
+        let colour_pipeline = create_compute_pipeline(
+            device,
+            "colour",
+            include_str!("shaders/colour.wgsl"),
+            &colour_bgl,
+        );
 
         // --- Food regen pipeline (competing mode) ---
         let food_regen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("food_regen_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &[uniform_entry(0), storage_buffer_entry(1, false)],
         });
-        let food_regen_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("food_regen_pipeline_layout"),
-                bind_group_layouts: &[&food_regen_bgl],
-                push_constant_ranges: &[],
-            });
-        let food_regen_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("food_regen_pipeline"),
-                layout: Some(&food_regen_pipeline_layout),
-                module: &food_regen_shader,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let food_regen_pipeline = create_compute_pipeline(
+            device,
+            "food_regen",
+            include_str!("shaders/food_regen.wgsl"),
+            &food_regen_bgl,
+        );
 
         // --- Render pipeline (blit) ---
+        let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blit_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/blit.wgsl").into()),
+        });
         let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blit_pipeline_layout"),
             bind_group_layouts: &[&blit_bgl],
@@ -700,28 +465,21 @@ impl Simulation {
             &update_bgl,
             &params_buffer,
             &agent_buffer,
-            &trail_view_a,
-            &trail_view_b,
+            &trail_views,
             &species_buffer,
             &food_view,
             &food_buffer,
             &population_buffer,
         );
 
-        let diffuse_bind_groups = create_diffuse_bind_groups(
-            device,
-            &diffuse_bgl,
-            &params_buffer,
-            &trail_view_a,
-            &trail_view_b,
-        );
+        let diffuse_bind_groups =
+            create_diffuse_bind_groups(device, &diffuse_bgl, &params_buffer, &trail_views);
 
         let colour_bind_groups = create_colour_bind_groups(
             device,
             &colour_bgl,
             &colour_params_buffer,
-            &trail_view_a,
-            &trail_view_b,
+            &trail_views,
             &colour_view,
             &species_buffer,
             &food_view,
@@ -752,8 +510,8 @@ impl Simulation {
             params_buffer,
             species_buffer,
             colour_params_buffer,
-            trail_textures: [trail_a, trail_b],
-            trail_views: [trail_view_a, trail_view_b],
+            trail_textures,
+            trail_views,
             trail_idx: 0,
             colour_texture,
             colour_view,
@@ -1033,8 +791,7 @@ impl Simulation {
             &self.update_bgl,
             &self.params_buffer,
             &self.agent_buffer,
-            &self.trail_views[0],
-            &self.trail_views[1],
+            &self.trail_views,
             &self.species_buffer,
             &self.food_view,
             &self.food_buffer,
@@ -1044,15 +801,13 @@ impl Simulation {
             device,
             &self.diffuse_bgl,
             &self.params_buffer,
-            &self.trail_views[0],
-            &self.trail_views[1],
+            &self.trail_views,
         );
         self.colour_bind_groups = create_colour_bind_groups(
             device,
             &self.colour_bgl,
             &self.colour_params_buffer,
-            &self.trail_views[0],
-            &self.trail_views[1],
+            &self.trail_views,
             &self.colour_view,
             &self.species_buffer,
             &self.food_view,
@@ -1191,210 +946,236 @@ fn clear_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, width: u32, heigh
     );
 }
 
+fn create_texture(
+    device: &wgpu::Device,
+    label: &str,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage,
+        view_formats: &[],
+    })
+}
+
+/// Shader module, pipeline layout and pipeline for a compute shader whose
+/// entry point is `main`. Labels are `{name}_shader`, `{name}_pipeline_layout`
+/// and `{name}_pipeline`.
+fn create_compute_pipeline(
+    device: &wgpu::Device,
+    name: &str,
+    source: &str,
+    bind_group_layout: &wgpu::BindGroupLayout,
+) -> wgpu::ComputePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(&format!("{name}_shader")),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(&format!("{name}_pipeline_layout")),
+        bind_group_layouts: &[bind_group_layout],
+        push_constant_ranges: &[],
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(&format!("{name}_pipeline")),
+        layout: Some(&layout),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    })
+}
+
+// Bind group layout entries for compute shaders.
+
+fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn storage_buffer_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+/// Non-filterable 2D float texture, read with `textureLoad`.
+fn texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+/// Write-only 2D storage texture.
+fn storage_texture_entry(binding: u32, format: wgpu::TextureFormat) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::StorageTexture {
+            access: wgpu::StorageTextureAccess::WriteOnly,
+            format,
+            view_dimension: wgpu::TextureViewDimension::D2,
+        },
+        count: None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn create_update_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     params: &wgpu::Buffer,
     agents: &wgpu::Buffer,
-    trail_view_a: &wgpu::TextureView,
-    trail_view_b: &wgpu::TextureView,
+    trail_views: &[wgpu::TextureView; 2],
     species: &wgpu::Buffer,
     food_view: &wgpu::TextureView,
     food_buffer: &wgpu::Buffer,
     population_buffer: &wgpu::Buffer,
 ) -> [wgpu::BindGroup; 2] {
-    // Group 0: read A, write B
-    let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("update_bg_0"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: agents.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(trail_view_a),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(trail_view_b),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: species.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::TextureView(food_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: food_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: population_buffer.as_entire_binding(),
-            },
-        ],
-    });
-    // Group 1: read B, write A
-    let bg1 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("update_bg_1"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: agents.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(trail_view_b),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(trail_view_a),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: species.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::TextureView(food_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: food_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: population_buffer.as_entire_binding(),
-            },
-        ],
-    });
-    [bg0, bg1]
+    // Group i: read trail i, write the other
+    std::array::from_fn(|i| {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("update_bg_{i}")),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: agents.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&trail_views[i]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&trail_views[1 - i]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: species.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(food_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: food_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: population_buffer.as_entire_binding(),
+                },
+            ],
+        })
+    })
 }
 
 fn create_diffuse_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     params: &wgpu::Buffer,
-    trail_view_a: &wgpu::TextureView,
-    trail_view_b: &wgpu::TextureView,
+    trail_views: &[wgpu::TextureView; 2],
 ) -> [wgpu::BindGroup; 2] {
-    let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("diffuse_bg_0"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(trail_view_a),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(trail_view_b),
-            },
-        ],
-    });
-    let bg1 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("diffuse_bg_1"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(trail_view_b),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(trail_view_a),
-            },
-        ],
-    });
-    [bg0, bg1]
+    // Group i: read trail i, write the other
+    std::array::from_fn(|i| {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("diffuse_bg_{i}")),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&trail_views[i]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&trail_views[1 - i]),
+                },
+            ],
+        })
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_colour_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     colour_params: &wgpu::Buffer,
-    trail_view_a: &wgpu::TextureView,
-    trail_view_b: &wgpu::TextureView,
+    trail_views: &[wgpu::TextureView; 2],
     colour_view: &wgpu::TextureView,
     species: &wgpu::Buffer,
     food_view: &wgpu::TextureView,
 ) -> [wgpu::BindGroup; 2] {
-    let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("colour_bg_0"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: colour_params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(trail_view_a),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(colour_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: species.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::TextureView(food_view),
-            },
-        ],
-    });
-    let bg1 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("colour_bg_1"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: colour_params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(trail_view_b),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(colour_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: species.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::TextureView(food_view),
-            },
-        ],
-    });
-    [bg0, bg1]
+    // Group i: read trail i
+    std::array::from_fn(|i| {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("colour_bg_{i}")),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: colour_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&trail_views[i]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(colour_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: species.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(food_view),
+                },
+            ],
+        })
+    })
 }
 
 fn create_blit_bind_group(
