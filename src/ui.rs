@@ -322,8 +322,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
             }
         });
 
-    // Tab key toggles panel
-    if ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
+    // Tab key toggles panel, unless a text field has focus. Not `wants_keyboard_input()`:
+    // that is true for any focused widget, and Tab itself focuses the toggle button.
+    let typing = ctx
+        .memory(egui::Memory::focused)
+        .is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some());
+    if !typing && ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
         state.panel_open = !state.panel_open;
     }
 
@@ -655,4 +659,61 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
 
     // Report panel width for viewport calculation
     state.panel_width_points = ctx.available_rect().left();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab() -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Runs one frame of `draw_ui`, then a text field drawn after it (as the save dialog is).
+    fn run_frame(ctx: &Context, state: &mut UiState, text: &mut String, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            draw_ui(ctx, state);
+            egui::Area::new(egui::Id::new("test_area")).show(ctx, |ui| {
+                ui.add(egui::TextEdit::singleline(text).id(egui::Id::new("test_field")));
+            });
+        });
+    }
+
+    #[test]
+    fn tab_toggles_panel_on_every_press() {
+        let ctx = Context::default();
+        let mut state = UiState::default();
+        let mut text = String::new();
+        run_frame(&ctx, &mut state, &mut text, vec![]);
+        assert!(state.panel_open);
+
+        for expected in [false, true, false] {
+            run_frame(&ctx, &mut state, &mut text, vec![tab()]);
+            assert_eq!(state.panel_open, expected);
+        }
+    }
+
+    #[test]
+    fn tab_does_not_toggle_panel_while_typing() {
+        let ctx = Context::default();
+        let mut state = UiState::default();
+        let mut text = String::new();
+        run_frame(&ctx, &mut state, &mut text, vec![]);
+        ctx.memory_mut(|m| m.request_focus(egui::Id::new("test_field")));
+        run_frame(&ctx, &mut state, &mut text, vec![]);
+        assert!(state.panel_open);
+
+        run_frame(&ctx, &mut state, &mut text, vec![tab()]);
+        assert!(state.panel_open);
+    }
 }
