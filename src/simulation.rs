@@ -792,7 +792,8 @@ impl Simulation {
             width: self.width,
             height: self.height,
             num_species: ui.num_species,
-            food_viz_weight: if ui.show_food {
+            // Classic food has no effect at weight 0, so don't draw it either
+            food_viz_weight: if ui.show_food && (ui.competing_mode || ui.food_weight > 0.0) {
                 ui.food_viz_weight
             } else {
                 0.0

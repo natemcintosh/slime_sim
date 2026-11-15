@@ -131,7 +131,7 @@ impl ApplicationHandler for App {
                         &self.ui_state,
                     );
                     // Re-upload food map at new dimensions (classic mode only)
-                    if !self.ui_state.competing_mode && self.ui_state.food_weight > 0.0 {
+                    if !self.ui_state.competing_mode {
                         let food_data = food::generate_food_map(
                             new_size.width,
                             new_size.height,
@@ -163,7 +163,7 @@ impl ApplicationHandler for App {
                     self.ui_state.reset_requested = false;
                     sim.reset(&gpu.device, &gpu.queue, &self.ui_state);
                     // Re-upload food map after reset (classic mode only)
-                    if !self.ui_state.competing_mode && self.ui_state.food_weight > 0.0 {
+                    if !self.ui_state.competing_mode {
                         let food_data = food::generate_food_map(
                             sim.width,
                             sim.height,
