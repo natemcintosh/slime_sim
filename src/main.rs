@@ -190,11 +190,12 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Update params from UI
+                // Update params from UI. Cap the frame time at 50 ms so the first
+                // frame and hitches don't teleport agents (FPS above stays unclamped).
                 let step_dt = if self.ui_state.paused {
                     0.0
                 } else {
-                    dt / self.ui_state.steps_per_frame as f32
+                    dt.min(0.05) / self.ui_state.steps_per_frame as f32
                 };
                 sim.update_params(&gpu.queue, &self.ui_state, step_dt);
 

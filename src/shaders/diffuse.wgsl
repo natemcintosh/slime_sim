@@ -52,7 +52,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let blurred = sum / 9.0;
 
     // Blend between original and blurred based on diffuse rate
-    let diffused = mix(original, blurred, params.diffuse_rate * params.delta_time);
+    let diffused = mix(original, blurred, clamp(params.diffuse_rate * params.delta_time, 0.0, 1.0));
 
     // Decay
     let decayed = max(vec4<f32>(0.0), diffused - params.decay_rate * params.delta_time);
