@@ -355,12 +355,7 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                 ui.add(egui::Slider::new(&mut state.steps_per_frame, 1..=10).text("Steps / Frame"));
                 ui.separator();
 
-                let mut ns = state.num_species as usize;
-                ui.add(egui::Slider::new(&mut ns, 1..=4).text("Species Count"));
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    state.num_species = ns as u32;
-                }
+                ui.add(egui::Slider::new(&mut state.num_species, 1..=4).text("Species Count"));
 
                 egui::CollapsingHeader::new("Palette Presets")
                     .default_open(false)
@@ -413,13 +408,11 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                 );
 
                 ui.separator();
-                let mut na = state.num_agents;
                 ui.add(
-                    egui::Slider::new(&mut na, 1000..=500_000)
+                    egui::Slider::new(&mut state.num_agents, 1000..=500_000)
                         .text("Agents")
                         .logarithmic(true),
                 );
-                state.num_agents = na;
 
                 ui.separator();
                 egui::CollapsingHeader::new("Food / Population Density")
@@ -526,20 +519,16 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                     state.load_dialog_open = true;
                 }
 
-                if let Some(status) = &state.save_status {
-                    if status.starts_with("Error:") {
-                        ui.colored_label(egui::Color32::RED, status);
+                for status in [&state.save_status, &state.load_status]
+                    .into_iter()
+                    .flatten()
+                {
+                    let colour = if status.starts_with("Error:") {
+                        egui::Color32::RED
                     } else {
-                        ui.colored_label(egui::Color32::GREEN, status);
-                    }
-                }
-
-                if let Some(status) = &state.load_status {
-                    if status.starts_with("Error:") {
-                        ui.colored_label(egui::Color32::RED, status);
-                    } else {
-                        ui.colored_label(egui::Color32::GREEN, status);
-                    }
+                        egui::Color32::GREEN
+                    };
+                    ui.colored_label(colour, status);
                 }
             });
         });
