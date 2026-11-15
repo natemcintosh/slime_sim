@@ -38,6 +38,8 @@ struct SimulationConfig {
     food_num_clumps: u32,
     #[serde(default = "default_food_clump_radius")]
     food_clump_radius: f32,
+    #[serde(default = "default_food_seed")]
+    food_seed: u32,
     #[serde(default = "default_food_viz_weight")]
     food_viz_weight: f32,
     #[serde(default = "default_true")]
@@ -67,6 +69,9 @@ fn default_food_num_clumps() -> u32 {
 }
 fn default_food_clump_radius() -> f32 {
     30.0
+}
+fn default_food_seed() -> u32 {
+    42
 }
 fn default_food_viz_weight() -> f32 {
     0.3
@@ -180,6 +185,7 @@ fn build_config(title: &str, notes: &str, ui: &UiState, timestamp: u64) -> Confi
             food_weight: ui.food_weight,
             food_num_clumps: ui.food_num_clumps,
             food_clump_radius: ui.food_clump_radius,
+            food_seed: ui.food_seed,
             food_viz_weight: ui.food_viz_weight,
             show_food: ui.show_food,
             competing_mode: ui.competing_mode,
@@ -269,6 +275,7 @@ pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
     ui.food_weight = sim.food_weight;
     ui.food_num_clumps = sim.food_num_clumps;
     ui.food_clump_radius = sim.food_clump_radius;
+    ui.food_seed = sim.food_seed;
     ui.food_viz_weight = sim.food_viz_weight;
     ui.show_food = sim.show_food;
     ui.competing_mode = sim.competing_mode;
@@ -423,6 +430,7 @@ mod tests {
             food_weight: 0.07,
             food_num_clumps: 12,
             food_clump_radius: 45.5,
+            food_seed: 1234,
             food_viz_weight: 0.8,
             show_food: false,
             ..UiState::default()
@@ -435,6 +443,7 @@ mod tests {
         assert!((loaded.food_weight - 0.07).abs() < 0.01);
         assert_eq!(loaded.food_num_clumps, 12);
         assert!((loaded.food_clump_radius - 45.5).abs() < 0.1);
+        assert_eq!(loaded.food_seed, 1234);
         assert!((loaded.food_viz_weight - 0.8).abs() < 0.01);
         assert!(!loaded.show_food);
     }
@@ -481,6 +490,7 @@ mod tests {
         assert!((loaded.food_weight - 0.0).abs() < 1e-6);
         assert_eq!(loaded.food_num_clumps, 5);
         assert!((loaded.food_clump_radius - 30.0).abs() < 0.1);
+        assert_eq!(loaded.food_seed, 42);
         assert!((loaded.food_viz_weight - 0.3).abs() < 0.01);
         assert!(loaded.show_food);
     }
