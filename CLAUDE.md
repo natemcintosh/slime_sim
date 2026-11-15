@@ -51,7 +51,7 @@ Food is a per-pixel value in 0..1. Each sensor sample adds `food * food_weight` 
 ### Key Data Structures
 
 - `Agent` — position (vec2), angle (f32), species_index (u32), energy (f32, competing mode)
-- `SimParams` — texture dimensions, agent count, trail physics, delta_time, food and competing-mode settings
+- `SimParams` — texture dimensions, agent count, trail physics, delta_time, food and competing-mode settings, `frame` (RNG seed; counts frames, reset to 0 on reset)
 - `SpeciesSettings` — per-species movement, sensor config, RGBA color
 - `UiState` (`ui.rs`) — all runtime-adjustable parameters
 - `Simulation` — owns all GPU buffers, textures, pipelines, and bind groups
@@ -77,4 +77,4 @@ Food is a per-pixel value in 0..1. Each sensor sample adds `food * food_weight` 
 
 ## Testing
 
-Tests live in `src/simulation.rs` and `src/config_io.rs`. GPU smoke tests exist but are `#[ignore]`d by default (require a GPU). Use `cargo test -- --ignored` to run them explicitly.
+Tests live in `src/simulation.rs`, `src/config_io.rs`, `src/food.rs` and `src/ui.rs`. GPU smoke tests exist but are `#[ignore]`d by default (require a GPU). Use `cargo test -- --ignored` to run them explicitly.
