@@ -206,6 +206,7 @@ fn spawn_mode_to_string(mode: SpawnMode) -> &'static str {
         SpawnMode::CentreCircle => "centre_circle",
         SpawnMode::RandomFill => "random_fill",
         SpawnMode::InwardCircle => "inward_circle",
+        SpawnMode::Territories => "territories",
     }
 }
 
@@ -221,6 +222,7 @@ fn string_to_spawn_mode(s: &str) -> Result<SpawnMode, String> {
         "centre_circle" => Ok(SpawnMode::CentreCircle),
         "random_fill" => Ok(SpawnMode::RandomFill),
         "inward_circle" => Ok(SpawnMode::InwardCircle),
+        "territories" => Ok(SpawnMode::Territories),
         other => Err(format!("Unknown spawn mode: '{other}'")),
     }
 }
@@ -385,6 +387,7 @@ mod tests {
     #[case(SpawnMode::CentreCircle, "centre_circle")]
     #[case(SpawnMode::RandomFill, "random_fill")]
     #[case(SpawnMode::InwardCircle, "inward_circle")]
+    #[case(SpawnMode::Territories, "territories")]
     fn spawn_mode_to_string_maps_all_variants(#[case] mode: SpawnMode, #[case] expected: &str) {
         assert_eq!(spawn_mode_to_string(mode), expected);
     }
@@ -393,6 +396,7 @@ mod tests {
     #[case("centre_circle", SpawnMode::CentreCircle)]
     #[case("random_fill", SpawnMode::RandomFill)]
     #[case("inward_circle", SpawnMode::InwardCircle)]
+    #[case("territories", SpawnMode::Territories)]
     fn string_to_spawn_mode_maps_all_variants(#[case] input: &str, #[case] expected: SpawnMode) {
         assert_eq!(string_to_spawn_mode(input).unwrap(), expected);
     }

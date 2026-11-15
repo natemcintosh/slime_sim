@@ -4,7 +4,7 @@ struct ColourParams {
     width: u32,
     height: u32,
     num_species: u32,
-    food_viz_weight: f32,
+    food_colour: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> colour_params: ColourParams;
@@ -22,9 +22,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let coord = vec2<i32>(i32(id.x), i32(id.y));
     let trail = textureLoad(trail_map, coord, 0);
 
-    // Food visualization: faint warm background showing population density
+    // Food visualization: background layer in the colour chosen on the CPU
     let food_value = textureLoad(food_map, coord, 0).r;
-    let food_colour = vec3<f32>(0.15, 0.12, 0.08) * food_value * colour_params.food_viz_weight;
+    let food_colour = colour_params.food_colour.rgb * food_value;
 
     var colour = vec4<f32>(food_colour, 1.0);
 

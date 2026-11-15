@@ -100,7 +100,9 @@ pub struct ColourParams {
     pub width: u32,
     pub height: u32,
     pub num_species: u32,
-    pub food_viz_weight: f32,
+    pub _padding: u32,
+    /// Colour of a pixel with food 1.0; zero hides the food layer.
+    pub food_colour: [f32; 4],
 }
 
 // ---- Simulation state ----
@@ -203,7 +205,8 @@ impl Simulation {
             width,
             height,
             num_species: ui.num_species,
-            food_viz_weight: 0.0,
+            _padding: 0,
+            food_colour: [0.0; 4],
         };
         let colour_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("colour_params_buffer"),
@@ -558,12 +561,8 @@ impl Simulation {
             width: self.width,
             height: self.height,
             num_species: ui.num_species,
-            // Classic food has no effect at weight 0, so don't draw it either
-            food_viz_weight: if ui.show_food && (ui.competing_mode || ui.food_weight > 0.0) {
-                ui.food_viz_weight
-            } else {
-                0.0
-            },
+            _padding: 0,
+            food_colour: food_colour(ui),
         };
         queue.write_buffer(
             &self.colour_params_buffer,
@@ -792,6 +791,12 @@ impl Simulation {
 
 // ---- Helper functions ----
 
+/// Territories spawn: distance of each disc's centre from the screen centre, as a
+/// fraction of the half-width/half-height.
+const TERRITORY_OFFSET: f32 = 0.7;
+/// Territories spawn: disc radius as a fraction of the smaller half-extent.
+const TERRITORY_RADIUS: f32 = 0.25;
+
 #[allow(clippy::cast_precision_loss)]
 fn create_agents(
     num: u32,
@@ -850,9 +855,42 @@ fn create_agents(
                         _padding: 0,
                     }
                 }
+                SpawnMode::Territories => {
+                    // Disc centres sit on an ellipse; the half-step offset puts 2 species
+                    // left/right and 4 in the corners.
+                    let slot = (species_index as f32 + 0.5) / num_species as f32;
+                    let slot_angle = slot * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+                    let disc_x = cx + slot_angle.cos() * cx * TERRITORY_OFFSET;
+                    let disc_y = cy + slot_angle.sin() * cy * TERRITORY_OFFSET;
+                    let angle = r1 * std::f32::consts::TAU;
+                    let r = r2.sqrt() * cx.min(cy) * TERRITORY_RADIUS;
+                    Agent {
+                        position: [disc_x + angle.cos() * r, disc_y + angle.sin() * r],
+                        angle: heading,
+                        species_index,
+                        energy: initial_energy,
+                        _padding: 0,
+                    }
+                }
             }
         })
         .collect()
+}
+
+/// Colour drawn where food is 1.0: bright green in competing mode, where food is the
+/// thing being fought over, and a faint warm tint in classic mode.
+fn food_colour(ui: &UiState) -> [f32; 4] {
+    // Classic food has no effect at weight 0, so don't draw it either
+    if !ui.show_food || !(ui.competing_mode || ui.food_weight > 0.0) {
+        return [0.0; 4];
+    }
+    let base = if ui.competing_mode {
+        [0.2, 1.0, 0.3]
+    } else {
+        [0.15, 0.12, 0.08]
+    };
+    let [r, g, b] = base.map(|c| c * ui.food_viz_weight);
+    [r, g, b, 1.0]
 }
 
 pub(crate) fn hash_u32(mut state: u32) -> u32 {
@@ -1236,6 +1274,7 @@ mod tests {
     #[case(SpawnMode::CentreCircle)]
     #[case(SpawnMode::RandomFill)]
     #[case(SpawnMode::InwardCircle)]
+    #[case(SpawnMode::Territories)]
     fn create_agents_is_deterministic_and_cycles_species(#[case] mode: SpawnMode) {
         let num_agents = 512;
         let num_species = 3;
@@ -1284,6 +1323,55 @@ mod tests {
             let dist = (dx * dx + dy * dy).sqrt();
             assert!(dist <= radius + 1e-4);
         }
+    }
+
+    #[rstest]
+    #[case(2)]
+    #[case(3)]
+    #[case(4)]
+    fn territories_keep_species_apart_and_on_screen(#[case] num_species: u32) {
+        let (width, height) = (1280, 720);
+        let agents = create_agents(
+            2000,
+            num_species,
+            width,
+            height,
+            SpawnMode::Territories,
+            1.0,
+        );
+
+        for a in &agents {
+            assert!(a.position[0] >= 0.0 && a.position[0] < width as f32);
+            assert!(a.position[1] >= 0.0 && a.position[1] < height as f32);
+        }
+        // No agent is closer to a different species than the gap between two discs.
+        for a in agents.iter().step_by(17) {
+            for b in agents.iter().filter(|b| b.species_index != a.species_index) {
+                let dx = a.position[0] - b.position[0];
+                let dy = a.position[1] - b.position[1];
+                assert!((dx * dx + dy * dy).sqrt() > 50.0);
+            }
+        }
+    }
+
+    #[test]
+    fn food_colour_is_green_in_competing_mode_and_hidden_when_unused() {
+        let competing = UiState {
+            competing_mode: true,
+            ..UiState::default()
+        };
+        let [r, g, b, _] = food_colour(&competing);
+        assert!(g > 2.0 * r && g > 2.0 * b);
+
+        // Classic mode at Food Weight 0 draws nothing
+        assert_eq!(food_colour(&UiState::default()), [0.0; 4]);
+
+        let hidden = UiState {
+            competing_mode: true,
+            show_food: false,
+            ..UiState::default()
+        };
+        assert_eq!(food_colour(&hidden), [0.0; 4]);
     }
 
     #[test]

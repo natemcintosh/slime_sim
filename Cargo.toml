@@ -20,6 +20,7 @@ egui-wgpu = "0.33"
 egui-winit = "0.33"
 serde = { version = "1", features = ["derive"] }
 quick-xml = { version = "0.38", features = ["serialize"] }
+egui_plot = "0.34"
 
 [dev-dependencies]
 rstest = "0.26"
