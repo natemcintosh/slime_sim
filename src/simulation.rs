@@ -38,7 +38,9 @@ pub struct SimParams {
     pub reproduction_threshold: f32,
     pub food_num_clumps: u32,
     pub food_clump_radius: f32,
-    pub _pad: [u32; 4],
+    /// RNG seed for `update.wgsl`; counts frames (params are written once per frame).
+    pub frame: u32,
+    pub _pad: [u32; 3],
 }
 
 #[repr(C)]
@@ -56,7 +58,15 @@ pub struct SpeciesSettings {
 impl SimParams {
     /// `num_agents` is the size of the live agent buffer, not `ui.num_agents`:
     /// the slider only takes effect on reset.
-    fn from_ui(ui: &UiState, width: u32, height: u32, num_agents: u32, dt: f32, time: f32) -> Self {
+    fn from_ui(
+        ui: &UiState,
+        width: u32,
+        height: u32,
+        num_agents: u32,
+        dt: f32,
+        time: f32,
+        frame: u32,
+    ) -> Self {
         Self {
             width,
             height,
@@ -78,7 +88,8 @@ impl SimParams {
             reproduction_threshold: ui.reproduction_threshold,
             food_num_clumps: ui.food_num_clumps,
             food_clump_radius: ui.food_clump_radius,
-            _pad: [0; 4],
+            frame,
+            _pad: [0; 3],
         }
     }
 }
@@ -153,6 +164,7 @@ pub struct Simulation {
     // State
     num_agents: u32,
     elapsed_time: f32,
+    frame: u32,
     competing_mode: bool,
 }
 
@@ -183,7 +195,7 @@ impl Simulation {
         });
 
         // --- SimParams uniform ---
-        let params = SimParams::from_ui(ui, width, height, ui.num_agents, 1.0 / 60.0, 0.0);
+        let params = SimParams::from_ui(ui, width, height, ui.num_agents, 1.0 / 60.0, 0.0, 0);
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params_buffer"),
             contents: bytemuck::bytes_of(&params),
@@ -768,12 +780,14 @@ impl Simulation {
             blit_sampler,
             num_agents: ui.num_agents,
             elapsed_time: 0.0,
+            frame: 0,
             competing_mode: ui.competing_mode,
         }
     }
 
     pub fn update_params(&mut self, queue: &wgpu::Queue, ui: &UiState, dt: f32) {
         self.elapsed_time += dt;
+        self.frame = self.frame.wrapping_add(1);
         self.competing_mode = ui.competing_mode;
         let params = SimParams::from_ui(
             ui,
@@ -782,6 +796,7 @@ impl Simulation {
             self.num_agents,
             dt,
             self.elapsed_time,
+            self.frame,
         );
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
@@ -980,6 +995,7 @@ impl Simulation {
     pub fn reset(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, ui: &UiState) {
         self.num_agents = ui.num_agents;
         self.elapsed_time = 0.0;
+        self.frame = 0;
         self.trail_idx = 0;
 
         // Re-create agents
@@ -1453,7 +1469,7 @@ mod tests {
             num_agents: 500_000,
             ..UiState::default()
         };
-        let params = SimParams::from_ui(&ui, 64, 64, 1000, 0.0, 0.0);
+        let params = SimParams::from_ui(&ui, 64, 64, 1000, 0.0, 0.0, 0);
         assert_eq!(params.num_agents, 1000);
     }
 

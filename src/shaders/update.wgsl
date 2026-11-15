@@ -29,7 +29,7 @@ struct SimParams {
     reproduction_threshold: f32,
     food_num_clumps: u32,
     food_clump_radius: f32,
-    _pad0: u32,
+    frame: u32,
     _pad1: u32,
     _pad2: u32,
     _pad3: u32,
@@ -129,7 +129,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let spec = species[agent.species_index];
 
     // Random number generation
-    let random_seed = hash(u32(agent.position.y * f32(params.width) + agent.position.x) + hash(idx + u32(params.time * 100000.0)));
+    let random_seed = hash(u32(agent.position.y * f32(params.width) + agent.position.x) + hash(idx + params.frame));
     let random_steer = scale_to_01(random_seed);
 
     // Sense

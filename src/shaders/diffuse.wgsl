@@ -21,7 +21,7 @@ struct SimParams {
     reproduction_threshold: f32,
     food_num_clumps: u32,
     food_clump_radius: f32,
-    _pad0: u32,
+    frame: u32,
     _pad1: u32,
     _pad2: u32,
     _pad3: u32,
