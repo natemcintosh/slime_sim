@@ -4,7 +4,8 @@ struct ColourParams {
     width: u32,
     height: u32,
     num_species: u32,
-    food_viz_weight: f32,
+    competing_mode: u32,
+    food_colour: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> colour_params: ColourParams;
@@ -12,6 +13,7 @@ struct ColourParams {
 @group(0) @binding(2) var colour_map: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(3) var<storage, read> species: array<SpeciesSettings>;
 @group(0) @binding(4) var food_map: texture_2d<f32>;
+@group(0) @binding(5) var<storage, read> food_buffer: array<f32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -22,9 +24,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let coord = vec2<i32>(i32(id.x), i32(id.y));
     let trail = textureLoad(trail_map, coord, 0);
 
-    // Food visualization: faint warm background showing population density
-    let food_value = textureLoad(food_map, coord, 0).r;
-    let food_colour = vec3<f32>(0.15, 0.12, 0.08) * food_value * colour_params.food_viz_weight;
+    // Food visualization: background layer in the colour chosen on the CPU
+    var food_value = textureLoad(food_map, coord, 0).r;
+    if (colour_params.competing_mode != 0u) {
+        food_value = food_buffer[id.y * colour_params.width + id.x];
+    }
+    let food_colour = colour_params.food_colour.rgb * food_value;
 
     var colour = vec4<f32>(food_colour, 1.0);
 

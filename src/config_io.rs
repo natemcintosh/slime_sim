@@ -83,19 +83,19 @@ fn default_initial_energy() -> f32 {
     1.0
 }
 fn default_move_energy_cost() -> f32 {
-    0.001
+    0.03
 }
 fn default_deposit_energy_cost() -> f32 {
-    0.0005
+    0.02
 }
 fn default_energy_per_food() -> f32 {
-    0.5
+    2.0
 }
 fn default_food_eat_rate() -> f32 {
-    0.1
+    0.5
 }
 fn default_food_regen_rate() -> f32 {
-    0.01
+    0.35
 }
 fn default_food_clump_lifetime() -> f32 {
     30.0
@@ -206,6 +206,7 @@ fn spawn_mode_to_string(mode: SpawnMode) -> &'static str {
         SpawnMode::CentreCircle => "centre_circle",
         SpawnMode::RandomFill => "random_fill",
         SpawnMode::InwardCircle => "inward_circle",
+        SpawnMode::Territories => "territories",
     }
 }
 
@@ -221,6 +222,7 @@ fn string_to_spawn_mode(s: &str) -> Result<SpawnMode, String> {
         "centre_circle" => Ok(SpawnMode::CentreCircle),
         "random_fill" => Ok(SpawnMode::RandomFill),
         "inward_circle" => Ok(SpawnMode::InwardCircle),
+        "territories" => Ok(SpawnMode::Territories),
         other => Err(format!("Unknown spawn mode: '{other}'")),
     }
 }
@@ -385,6 +387,7 @@ mod tests {
     #[case(SpawnMode::CentreCircle, "centre_circle")]
     #[case(SpawnMode::RandomFill, "random_fill")]
     #[case(SpawnMode::InwardCircle, "inward_circle")]
+    #[case(SpawnMode::Territories, "territories")]
     fn spawn_mode_to_string_maps_all_variants(#[case] mode: SpawnMode, #[case] expected: &str) {
         assert_eq!(spawn_mode_to_string(mode), expected);
     }
@@ -393,6 +396,7 @@ mod tests {
     #[case("centre_circle", SpawnMode::CentreCircle)]
     #[case("random_fill", SpawnMode::RandomFill)]
     #[case("inward_circle", SpawnMode::InwardCircle)]
+    #[case("territories", SpawnMode::Territories)]
     fn string_to_spawn_mode_maps_all_variants(#[case] input: &str, #[case] expected: SpawnMode) {
         assert_eq!(string_to_spawn_mode(input).unwrap(), expected);
     }

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use egui::Context;
 
 use crate::config_io;
@@ -136,11 +138,18 @@ const PALETTES_SEQUENTIAL: &[(&str, [[f32; 3]; 4])] = &[
     ),
 ];
 
+/// Sim seconds between population graph samples.
+const POPULATION_SAMPLE_INTERVAL: f32 = 0.25;
+/// Samples kept for the population graph (5 minutes).
+const POPULATION_HISTORY_LEN: usize = 1200;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SpawnMode {
     CentreCircle,
     RandomFill,
     InwardCircle,
+    /// Each species starts in its own disc, spaced around the centre.
+    Territories,
 }
 
 pub struct SpeciesUi {
@@ -194,6 +203,9 @@ pub struct UiState {
     pub food_clump_lifetime: f32,
     pub reproduction_threshold: f32,
     pub population_counts: [u32; 4],
+    /// Past `population_counts`, oldest first, for the population graph.
+    pub population_history: VecDeque<[u32; 4]>,
+    pub population_sample_timer: f32,
 }
 
 impl Default for UiState {
@@ -262,16 +274,83 @@ impl Default for UiState {
             food_seed: 42,
             competing_mode: false,
             initial_energy: 1.0,
-            move_energy_cost: 0.001,
-            deposit_energy_cost: 0.0005,
-            energy_per_food: 0.5,
-            food_eat_rate: 0.1,
-            food_regen_rate: 0.01,
+            move_energy_cost: 0.03,
+            deposit_energy_cost: 0.02,
+            energy_per_food: 2.0,
+            food_eat_rate: 0.5,
+            food_regen_rate: 0.35,
             food_clump_lifetime: 30.0,
             reproduction_threshold: 2.0,
             population_counts: [0; 4],
+            population_history: VecDeque::new(),
+            population_sample_timer: 0.0,
         }
     }
+}
+
+impl UiState {
+    /// Adds `population_counts` to the graph history once per sample interval of sim time.
+    pub fn record_population(&mut self, dt: f32) {
+        self.population_sample_timer += dt;
+        if self.population_sample_timer < POPULATION_SAMPLE_INTERVAL {
+            return;
+        }
+        self.population_sample_timer = 0.0;
+        if self.population_history.len() == POPULATION_HISTORY_LEN {
+            self.population_history.pop_front();
+        }
+        self.population_history.push_back(self.population_counts);
+    }
+
+    /// Sets what competing mode needs for species to actually compete. Values that
+    /// already work are kept.
+    pub(crate) fn apply_competing_defaults(&mut self) {
+        self.num_species = self.num_species.max(2);
+        if self.food_weight <= 0.0 {
+            self.food_weight = 0.5;
+        }
+        self.spawn_mode = SpawnMode::Territories;
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn to_color32(colour: [f32; 3]) -> egui::Color32 {
+    egui::Color32::from_rgb(
+        (colour[0] * 255.0) as u8,
+        (colour[1] * 255.0) as u8,
+        (colour[2] * 255.0) as u8,
+    )
+}
+
+/// Line graph of each species' population over the recorded history.
+#[allow(clippy::cast_precision_loss)]
+fn population_plot(ui: &mut egui::Ui, state: &UiState) {
+    let len = state.population_history.len();
+    egui_plot::Plot::new("population_plot")
+        .height(120.0)
+        .allow_drag(false)
+        .allow_zoom(false)
+        .allow_scroll(false)
+        .include_y(0.0)
+        .x_axis_label("seconds ago")
+        .show(ui, |plot_ui| {
+            for s in 0..state.num_species as usize {
+                let points: egui_plot::PlotPoints = state
+                    .population_history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, counts)| {
+                        let seconds =
+                            (i as f64 - len as f64) * f64::from(POPULATION_SAMPLE_INTERVAL);
+                        [seconds, f64::from(counts[s])]
+                    })
+                    .collect();
+                plot_ui.line(
+                    egui_plot::Line::new(format!("Species {}", s + 1), points)
+                        .color(to_color32(state.species[s].colour)),
+                );
+            }
+        });
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -406,6 +485,7 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                     SpawnMode::InwardCircle,
                     "Inward Circle",
                 );
+                ui.radio_value(&mut state.spawn_mode, SpawnMode::Territories, "Territories");
 
                 ui.separator();
                 ui.add(
@@ -450,6 +530,9 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                         let prev_mode = state.competing_mode;
                         ui.checkbox(&mut state.competing_mode, "Enable Competing Mode");
                         if state.competing_mode != prev_mode {
+                            if state.competing_mode {
+                                state.apply_competing_defaults();
+                            }
                             state.reset_requested = true;
                         }
 
@@ -459,12 +542,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                                     .text("Initial Energy"),
                             );
                             ui.add(
-                                egui::Slider::new(&mut state.move_energy_cost, 0.0001..=0.01)
+                                egui::Slider::new(&mut state.move_energy_cost, 0.0001..=1.0)
                                     .text("Move Energy Cost")
                                     .logarithmic(true),
                             );
                             ui.add(
-                                egui::Slider::new(&mut state.deposit_energy_cost, 0.0..=0.01)
+                                egui::Slider::new(&mut state.deposit_energy_cost, 0.0..=1.0)
                                     .text("Deposit Energy Cost")
                                     .logarithmic(true),
                             );
@@ -499,8 +582,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                                 .enumerate()
                                 .take(state.num_species as usize)
                             {
-                                ui.label(format!("  Species {}: {count}", i + 1));
+                                ui.colored_label(
+                                    to_color32(state.species[i].colour),
+                                    format!("  Species {}: {count}", i + 1),
+                                );
                             }
+                            population_plot(ui, state);
                         }
                     });
 
@@ -690,6 +777,50 @@ mod tests {
             run_frame(&ctx, &mut state, &mut text, vec![tab()]);
             assert_eq!(state.panel_open, expected);
         }
+    }
+
+    #[test]
+    fn competing_defaults_fix_settings_that_prevent_competition() {
+        let mut state = UiState::default();
+        state.apply_competing_defaults();
+        assert_eq!(state.num_species, 2);
+        assert!(state.food_weight > 0.0);
+        assert_eq!(state.spawn_mode, SpawnMode::Territories);
+    }
+
+    #[test]
+    fn competing_defaults_keep_valid_species_count_and_food_weight() {
+        let mut state = UiState {
+            num_species: 4,
+            food_weight: 0.2,
+            ..UiState::default()
+        };
+        state.apply_competing_defaults();
+        assert_eq!(state.num_species, 4);
+        assert!((state.food_weight - 0.2).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn record_population_samples_once_per_interval() {
+        let mut state = UiState {
+            population_counts: [5, 6, 0, 0],
+            ..UiState::default()
+        };
+        state.record_population(POPULATION_SAMPLE_INTERVAL * 0.6);
+        assert!(state.population_history.is_empty());
+        state.record_population(POPULATION_SAMPLE_INTERVAL * 0.6);
+        assert_eq!(state.population_history, [[5, 6, 0, 0]]);
+    }
+
+    #[test]
+    fn record_population_drops_oldest_sample_when_full() {
+        let mut state = UiState::default();
+        for i in 0..=POPULATION_HISTORY_LEN {
+            state.population_counts[0] = u32::try_from(i).unwrap();
+            state.record_population(POPULATION_SAMPLE_INTERVAL);
+        }
+        assert_eq!(state.population_history.len(), POPULATION_HISTORY_LEN);
+        assert_eq!(state.population_history[0][0], 1);
     }
 
     #[test]

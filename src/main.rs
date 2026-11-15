@@ -172,6 +172,7 @@ impl ApplicationHandler for App {
                 // Handle reset
                 if self.ui_state.reset_requested {
                     self.ui_state.reset_requested = false;
+                    self.ui_state.population_history.clear();
                     sim.reset(&gpu.device, &gpu.queue, &self.ui_state);
                     // Re-upload food map after reset
                     upload_classic_food_map(sim, &gpu.queue, &self.ui_state);
@@ -298,6 +299,8 @@ impl ApplicationHandler for App {
                 // Read back population counts (competing mode)
                 if self.ui_state.competing_mode && !self.ui_state.paused {
                     self.ui_state.population_counts = sim.read_population_counts(&gpu.device);
+                    self.ui_state
+                        .record_population(step_dt * self.ui_state.steps_per_frame as f32);
                 }
 
                 for id in &full_output.textures_delta.free {
