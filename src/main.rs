@@ -39,6 +39,25 @@ impl App {
     }
 }
 
+/// Generate the food map at the sim's size and upload it (classic mode only).
+fn upload_classic_food_map(
+    sim: &simulation::Simulation,
+    queue: &wgpu::Queue,
+    ui_state: &ui::UiState,
+) {
+    if ui_state.competing_mode {
+        return;
+    }
+    let food_data = food::generate_food_map(
+        sim.width,
+        sim.height,
+        ui_state.food_num_clumps,
+        ui_state.food_clump_radius,
+        ui_state.food_seed,
+    );
+    sim.upload_food_map(queue, &food_data);
+}
+
 impl ApplicationHandler for App {
     #[allow(clippy::cast_possible_truncation)]
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -65,6 +84,7 @@ impl ApplicationHandler for App {
             sim_height,
             &self.ui_state,
         );
+        upload_classic_food_map(&sim, &gpu.queue, &self.ui_state);
 
         let egui_winit = egui_winit::State::new(
             self.egui_ctx.clone(),
@@ -130,17 +150,8 @@ impl ApplicationHandler for App {
                         new_size.height,
                         &self.ui_state,
                     );
-                    // Re-upload food map at new dimensions (classic mode only)
-                    if !self.ui_state.competing_mode {
-                        let food_data = food::generate_food_map(
-                            new_size.width,
-                            new_size.height,
-                            self.ui_state.food_num_clumps,
-                            self.ui_state.food_clump_radius,
-                            self.ui_state.food_seed,
-                        );
-                        new_sim.upload_food_map(&gpu.queue, &food_data);
-                    }
+                    // Re-upload food map at new dimensions
+                    upload_classic_food_map(&new_sim, &gpu.queue, &self.ui_state);
                     self.sim = Some(new_sim);
                 }
             }
@@ -162,32 +173,14 @@ impl ApplicationHandler for App {
                 if self.ui_state.reset_requested {
                     self.ui_state.reset_requested = false;
                     sim.reset(&gpu.device, &gpu.queue, &self.ui_state);
-                    // Re-upload food map after reset (classic mode only)
-                    if !self.ui_state.competing_mode {
-                        let food_data = food::generate_food_map(
-                            sim.width,
-                            sim.height,
-                            self.ui_state.food_num_clumps,
-                            self.ui_state.food_clump_radius,
-                            self.ui_state.food_seed,
-                        );
-                        sim.upload_food_map(&gpu.queue, &food_data);
-                    }
+                    // Re-upload food map after reset
+                    upload_classic_food_map(sim, &gpu.queue, &self.ui_state);
                 }
 
-                // Handle food regeneration (classic mode only)
+                // Handle food regeneration
                 if self.ui_state.food_regen_requested {
                     self.ui_state.food_regen_requested = false;
-                    if !self.ui_state.competing_mode {
-                        let food_data = food::generate_food_map(
-                            sim.width,
-                            sim.height,
-                            self.ui_state.food_num_clumps,
-                            self.ui_state.food_clump_radius,
-                            self.ui_state.food_seed,
-                        );
-                        sim.upload_food_map(&gpu.queue, &food_data);
-                    }
+                    upload_classic_food_map(sim, &gpu.queue, &self.ui_state);
                 }
 
                 // Update params from UI. Cap the frame time at 50 ms so the first
