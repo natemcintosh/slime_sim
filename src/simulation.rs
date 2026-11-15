@@ -372,19 +372,28 @@ impl Simulation {
         let update_pipeline = create_compute_pipeline(
             device,
             "update",
-            include_str!("shaders/update.wgsl"),
+            concat!(
+                include_str!("shaders/common.wgsl"),
+                include_str!("shaders/update.wgsl")
+            ),
             &update_bgl,
         );
         let diffuse_pipeline = create_compute_pipeline(
             device,
             "diffuse",
-            include_str!("shaders/diffuse.wgsl"),
+            concat!(
+                include_str!("shaders/common.wgsl"),
+                include_str!("shaders/diffuse.wgsl")
+            ),
             &diffuse_bgl,
         );
         let colour_pipeline = create_compute_pipeline(
             device,
             "colour",
-            include_str!("shaders/colour.wgsl"),
+            concat!(
+                include_str!("shaders/common.wgsl"),
+                include_str!("shaders/colour.wgsl")
+            ),
             &colour_bgl,
         );
 
@@ -396,7 +405,10 @@ impl Simulation {
         let food_regen_pipeline = create_compute_pipeline(
             device,
             "food_regen",
-            include_str!("shaders/food_regen.wgsl"),
+            concat!(
+                include_str!("shaders/common.wgsl"),
+                include_str!("shaders/food_regen.wgsl")
+            ),
             &food_regen_bgl,
         );
 

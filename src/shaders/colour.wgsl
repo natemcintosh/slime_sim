@@ -1,17 +1,5 @@
 // Colour mapping shader: trail intensities -> species colours
 
-struct SpeciesSettings {
-    move_speed: f32,
-    turn_speed: f32,
-    sensor_angle_spacing: f32,
-    sensor_offset_dst: f32,
-    sensor_size: i32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
-    colour: vec4<f32>,
-}
-
 struct ColourParams {
     width: u32,
     height: u32,

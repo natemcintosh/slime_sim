@@ -1,32 +1,5 @@
 // Trail diffusion shader: 3x3 blur + decay
 
-struct SimParams {
-    width: u32,
-    height: u32,
-    num_agents: u32,
-    trail_weight: f32,
-    decay_rate: f32,
-    diffuse_rate: f32,
-    delta_time: f32,
-    time: f32,
-    food_weight: f32,
-    competing_mode: u32,
-    initial_energy: f32,
-    move_energy_cost: f32,
-    deposit_energy_cost: f32,
-    energy_per_food: f32,
-    food_eat_rate: f32,
-    food_regen_rate: f32,
-    food_clump_lifetime: f32,
-    reproduction_threshold: f32,
-    food_num_clumps: u32,
-    food_clump_radius: f32,
-    frame: u32,
-    _pad1: u32,
-    _pad2: u32,
-    _pad3: u32,
-}
-
 @group(0) @binding(0) var<uniform> params: SimParams;
 @group(0) @binding(1) var trail_read: texture_2d<f32>;
 @group(0) @binding(2) var trail_write: texture_storage_2d<rgba16float, write>;

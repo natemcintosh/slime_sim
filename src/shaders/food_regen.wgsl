@@ -1,49 +1,7 @@
 // Food regeneration shader: procedurally grows food at shifting clump locations
 
-struct SimParams {
-    width: u32,
-    height: u32,
-    num_agents: u32,
-    trail_weight: f32,
-    decay_rate: f32,
-    diffuse_rate: f32,
-    delta_time: f32,
-    time: f32,
-    food_weight: f32,
-    competing_mode: u32,
-    initial_energy: f32,
-    move_energy_cost: f32,
-    deposit_energy_cost: f32,
-    energy_per_food: f32,
-    food_eat_rate: f32,
-    food_regen_rate: f32,
-    food_clump_lifetime: f32,
-    reproduction_threshold: f32,
-    food_num_clumps: u32,
-    food_clump_radius: f32,
-    frame: u32,
-    _pad1: u32,
-    _pad2: u32,
-    _pad3: u32,
-}
-
 @group(0) @binding(0) var<uniform> params: SimParams;
 @group(0) @binding(1) var<storage, read_write> food_buffer: array<f32>;
-
-fn hash(state_in: u32) -> u32 {
-    var state = state_in;
-    state = state ^ 2747636419u;
-    state = state * 2654435769u;
-    state = state ^ (state >> 16u);
-    state = state * 2654435769u;
-    state = state ^ (state >> 16u);
-    state = state * 2654435769u;
-    return state;
-}
-
-fn scale_to_01(state: u32) -> f32 {
-    return f32(state) / 4294967295.0;
-}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
