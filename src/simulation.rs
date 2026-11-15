@@ -708,10 +708,7 @@ impl Simulation {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.colour_pipeline);
-            // Read from current trail (trail_idx was just swapped, so the "result" is in 1-trail_idx after step)
-            // Actually after step, trail_idx was set to write_idx. The diffused result is in read_idx (the old read_idx).
-            // Let me think: after step, trail_idx = write_idx. The diffused data is in trail[old_read_idx] = trail[1-trail_idx].
-            // So we read from trail[1-trail_idx].
+            // After `step`, the diffused result is in trail[1 - trail_idx].
             let result_idx = 1 - self.trail_idx;
             pass.set_bind_group(0, &self.colour_bind_groups[result_idx], &[]);
             pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
@@ -1336,52 +1333,6 @@ mod tests {
 
             let expected = to_center_y.atan2(to_center_x);
             assert!(angle_delta(agent.angle, expected) < 1e-4);
-        }
-    }
-
-    #[test]
-    fn food_broadcast_to_all_channels_is_net_negative_with_species_weights() {
-        // Demonstrates the bug: when food is added equally to all 4 trail channels
-        // and agents sense with +1 for own channel, -1 for others, the food
-        // contribution is net-negative, causing agents to AVOID food.
-        for species_index in 0u32..4 {
-            let food_add = 0.5_f32;
-            let trail_with_food = [food_add; 4]; // food broadcast to all channels
-
-            let sense_weight: [f32; 4] =
-                std::array::from_fn(|i| if i as u32 == species_index { 1.0 } else { -1.0 });
-
-            let dot: f32 = trail_with_food
-                .iter()
-                .zip(sense_weight.iter())
-                .map(|(a, b)| a * b)
-                .sum();
-
-            // Bug: 1*0.5 + (-1)*0.5 + (-1)*0.5 + (-1)*0.5 = -1.0
-            assert!(
-                dot < 0.0,
-                "species {species_index}: food broadcast to all channels produces \
-                 net-negative sensor value ({dot}), causing avoidance"
-            );
-        }
-    }
-
-    #[test]
-    fn direct_food_sensing_is_always_positive() {
-        // Verifies the fix: when food is sensed directly (not through trail
-        // channels), its contribution is always positive regardless of species.
-        for _species_index in 0u32..4 {
-            let food_value = 0.8_f32;
-            let food_weight = 0.5_f32;
-
-            // Direct food sensing: food_value * food_weight, added to sensor sum
-            // independently of species sense weights
-            let food_contribution = food_value * food_weight;
-
-            assert!(
-                food_contribution > 0.0,
-                "direct food sensing should always be positive"
-            );
         }
     }
 
