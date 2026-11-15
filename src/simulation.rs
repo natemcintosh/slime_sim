@@ -121,11 +121,6 @@ pub struct Simulation {
     trail_views: [wgpu::TextureView; 2],
     trail_idx: usize, // which is "read" this frame
 
-    // Colour map
-    #[allow(dead_code)]
-    colour_texture: wgpu::Texture,
-    colour_view: wgpu::TextureView,
-
     // Food / population density map
     food_texture: wgpu::Texture,
     food_view: wgpu::TextureView,
@@ -146,10 +141,6 @@ pub struct Simulation {
 
     // Bind group layouts (needed for recreation)
     update_bgl: wgpu::BindGroupLayout,
-    diffuse_bgl: wgpu::BindGroupLayout,
-    colour_bgl: wgpu::BindGroupLayout,
-    blit_bgl: wgpu::BindGroupLayout,
-    food_regen_bgl: wgpu::BindGroupLayout,
 
     // Bind groups
     update_bind_groups: [wgpu::BindGroup; 2],
@@ -157,9 +148,6 @@ pub struct Simulation {
     colour_bind_groups: [wgpu::BindGroup; 2],
     blit_bind_group: wgpu::BindGroup,
     food_regen_bind_group: wgpu::BindGroup,
-
-    // Sampler for blit
-    blit_sampler: wgpu::Sampler,
 
     // State
     num_agents: u32,
@@ -513,8 +501,6 @@ impl Simulation {
             trail_textures,
             trail_views,
             trail_idx: 0,
-            colour_texture,
-            colour_view,
             food_texture,
             food_view,
             food_buffer,
@@ -526,16 +512,11 @@ impl Simulation {
             food_regen_pipeline,
             blit_pipeline,
             update_bgl,
-            diffuse_bgl,
-            colour_bgl,
-            blit_bgl,
-            food_regen_bgl,
             update_bind_groups,
             diffuse_bind_groups,
             colour_bind_groups,
             blit_bind_group,
             food_regen_bind_group,
-            blit_sampler,
             num_agents: ui.num_agents,
             elapsed_time: 0.0,
             frame: 0,
@@ -797,41 +778,6 @@ impl Simulation {
             &self.food_buffer,
             &self.population_buffer,
         );
-        self.diffuse_bind_groups = create_diffuse_bind_groups(
-            device,
-            &self.diffuse_bgl,
-            &self.params_buffer,
-            &self.trail_views,
-        );
-        self.colour_bind_groups = create_colour_bind_groups(
-            device,
-            &self.colour_bgl,
-            &self.colour_params_buffer,
-            &self.trail_views,
-            &self.colour_view,
-            &self.species_buffer,
-            &self.food_view,
-        );
-        self.blit_bind_group = create_blit_bind_group(
-            device,
-            &self.blit_bgl,
-            &self.colour_view,
-            &self.blit_sampler,
-        );
-        self.food_regen_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("food_regen_bg"),
-            layout: &self.food_regen_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.food_buffer.as_entire_binding(),
-                },
-            ],
-        });
     }
 }
 
