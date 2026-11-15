@@ -198,6 +198,25 @@ impl ApplicationHandler for App {
                 };
                 sim.update_params(&gpu.queue, &self.ui_state, step_dt);
 
+                // Get surface texture (before egui runs, so a failed frame doesn't
+                // drop egui's texture updates)
+                let output = match gpu.surface.get_current_texture() {
+                    Ok(t) => t,
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        gpu.resize(gpu.surface_config.width, gpu.surface_config.height);
+                        window.request_redraw();
+                        return;
+                    }
+                    Err(e) => {
+                        log::error!("Surface error: {e:?}");
+                        window.request_redraw();
+                        return;
+                    }
+                };
+                let view = output
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
                 // Build egui
                 let egui_winit = self.egui_winit.as_mut().unwrap();
                 let raw_input = egui_winit.take_egui_input(window);
@@ -208,22 +227,6 @@ impl ApplicationHandler for App {
                 let clipped_primitives = self
                     .egui_ctx
                     .tessellate(full_output.shapes, full_output.pixels_per_point);
-
-                // Get surface texture
-                let output = match gpu.surface.get_current_texture() {
-                    Ok(t) => t,
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        gpu.resize(gpu.surface_config.width, gpu.surface_config.height);
-                        return;
-                    }
-                    Err(e) => {
-                        log::error!("Surface error: {e:?}");
-                        return;
-                    }
-                };
-                let view = output
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let mut encoder =
                     gpu.device
