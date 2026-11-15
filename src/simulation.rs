@@ -54,11 +54,13 @@ pub struct SpeciesSettings {
 }
 
 impl SimParams {
-    fn from_ui(ui: &UiState, width: u32, height: u32, dt: f32, time: f32) -> Self {
+    /// `num_agents` is the size of the live agent buffer, not `ui.num_agents`:
+    /// the slider only takes effect on reset.
+    fn from_ui(ui: &UiState, width: u32, height: u32, num_agents: u32, dt: f32, time: f32) -> Self {
         Self {
             width,
             height,
-            num_agents: ui.num_agents,
+            num_agents,
             trail_weight: ui.trail_weight,
             decay_rate: ui.decay_rate,
             diffuse_rate: ui.diffuse_rate,
@@ -181,7 +183,7 @@ impl Simulation {
         });
 
         // --- SimParams uniform ---
-        let params = SimParams::from_ui(ui, width, height, 1.0 / 60.0, 0.0);
+        let params = SimParams::from_ui(ui, width, height, ui.num_agents, 1.0 / 60.0, 0.0);
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params_buffer"),
             contents: bytemuck::bytes_of(&params),
@@ -773,7 +775,14 @@ impl Simulation {
     pub fn update_params(&mut self, queue: &wgpu::Queue, ui: &UiState, dt: f32) {
         self.elapsed_time += dt;
         self.competing_mode = ui.competing_mode;
-        let params = SimParams::from_ui(ui, self.width, self.height, dt, self.elapsed_time);
+        let params = SimParams::from_ui(
+            ui,
+            self.width,
+            self.height,
+            self.num_agents,
+            dt,
+            self.elapsed_time,
+        );
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
         let species_data = build_species_data(ui);
@@ -1432,6 +1441,16 @@ mod tests {
             0,
             "ColourParams size ({size}) must be a multiple of 16 for uniform buffer alignment"
         );
+    }
+
+    #[test]
+    fn sim_params_use_buffer_agent_count_not_ui_slider() {
+        let ui = UiState {
+            num_agents: 500_000,
+            ..UiState::default()
+        };
+        let params = SimParams::from_ui(&ui, 64, 64, 1000, 0.0, 0.0);
+        assert_eq!(params.num_agents, 1000);
     }
 
     #[rstest]
