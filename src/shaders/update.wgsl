@@ -1,5 +1,8 @@
 // Agent update shader: sense, steer, move, deposit
 
+const PI: f32 = 3.14159265;
+const TAU: f32 = 2.0 * PI;
+
 struct Agent {
     position: vec2<f32>,
     angle: f32,
@@ -82,12 +85,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let weight_left = sense(agent, spec, spec.sensor_angle_spacing);
     let weight_right = sense(agent, spec, -spec.sensor_angle_spacing);
 
-    let turn_speed = spec.turn_speed * 2.0 * 3.14159265;
+    let turn_speed = spec.turn_speed * TAU;
 
     // Steer
     if (weight_forward > weight_left && weight_forward > weight_right) {
         // Continue straight
-        agent.angle += 0.0;
     } else if (weight_forward < weight_left && weight_forward < weight_right) {
         // Random turn
         agent.angle += (random_steer - 0.5) * 2.0 * turn_speed * params.delta_time;
@@ -110,7 +112,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Bounce off walls
         let random2 = hash(random_seed);
         new_pos = clamp(new_pos, vec2<f32>(0.0), vec2<f32>(w - 1.0, h - 1.0));
-        agent.angle = scale_to_01(random2) * 2.0 * 3.14159265;
+        agent.angle = scale_to_01(random2) * TAU;
     }
     agent.position = new_pos;
 
@@ -124,15 +126,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let old_trail = textureLoad(trail_read, coord, 0);
 
     var deposit = vec4<f32>(0.0);
-    if (agent.species_index == 0u) {
-        deposit.x = params.trail_weight * params.delta_time;
-    } else if (agent.species_index == 1u) {
-        deposit.y = params.trail_weight * params.delta_time;
-    } else if (agent.species_index == 2u) {
-        deposit.z = params.trail_weight * params.delta_time;
-    } else {
-        deposit.w = params.trail_weight * params.delta_time;
-    }
+    deposit[agent.species_index] = params.trail_weight * params.delta_time;
 
     let new_trail = min(old_trail + deposit, vec4<f32>(1.0));
     textureStore(trail_write, coord, new_trail);
@@ -159,7 +153,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var candidate = agents[candidate_idx];
             if (candidate.energy <= 0.0) {
                 candidate.position = agent.position;
-                candidate.angle = agent.angle + 3.14159265;
+                candidate.angle = agent.angle + PI;
                 candidate.species_index = agent.species_index;
                 candidate.energy = agent.energy * 0.5;
                 agent.energy = agent.energy * 0.5;
