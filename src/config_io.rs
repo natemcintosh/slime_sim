@@ -261,10 +261,10 @@ pub fn load_ui_state_from_xml(path: &Path) -> Result<UiState, String> {
     ui.trail_weight = sim.trail_weight;
     ui.decay_rate = sim.decay_rate;
     ui.diffuse_rate = sim.diffuse_rate;
-    ui.steps_per_frame = sim.steps_per_frame;
+    ui.steps_per_frame = sim.steps_per_frame.max(1);
     ui.spawn_mode = spawn_mode;
-    ui.num_agents = sim.num_agents;
-    ui.num_species = sim.num_species.min(4);
+    ui.num_agents = sim.num_agents.max(1);
+    ui.num_species = sim.num_species.clamp(1, 4);
 
     ui.food_weight = sim.food_weight;
     ui.food_num_clumps = sim.food_num_clumps;
@@ -483,6 +483,88 @@ mod tests {
         assert!((loaded.food_clump_radius - 30.0).abs() < 0.1);
         assert!((loaded.food_viz_weight - 0.3).abs() < 0.01);
         assert!(loaded.show_food);
+    }
+
+    #[test]
+    fn load_clamps_zero_counts_to_minimums() {
+        let dir = PathBuf::from("configs");
+        fs::create_dir_all(&dir).ok();
+        let path = dir.join("__test_zero_counts.xml");
+        fs::write(
+            &path,
+            r#"<slime_config version="1">
+  <metadata>
+    <title>zero counts</title>
+    <notes/>
+    <saved_at>0</saved_at>
+  </metadata>
+  <simulation>
+    <trail_weight>5</trail_weight>
+    <decay_rate>0.3</decay_rate>
+    <diffuse_rate>3</diffuse_rate>
+    <steps_per_frame>0</steps_per_frame>
+    <spawn_mode>centre_circle</spawn_mode>
+    <num_agents>0</num_agents>
+    <num_species>0</num_species>
+    <species>
+      <move_speed>100</move_speed>
+      <turn_speed>2</turn_speed>
+      <sensor_angle_deg>30</sensor_angle_deg>
+      <sensor_offset>35</sensor_offset>
+      <sensor_size>1</sensor_size>
+      <colour><r>1</r><g>1</g><b>1</b></colour>
+    </species>
+  </simulation>
+</slime_config>"#,
+        )
+        .unwrap();
+
+        let loaded = load_ui_state_from_xml(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert_eq!(loaded.num_species, 1);
+        assert_eq!(loaded.num_agents, 1);
+        assert_eq!(loaded.steps_per_frame, 1);
+    }
+
+    #[test]
+    fn load_clamps_species_count_to_four() {
+        let dir = PathBuf::from("configs");
+        fs::create_dir_all(&dir).ok();
+        let path = dir.join("__test_many_species.xml");
+        fs::write(
+            &path,
+            r#"<slime_config version="1">
+  <metadata>
+    <title>many species</title>
+    <notes/>
+    <saved_at>0</saved_at>
+  </metadata>
+  <simulation>
+    <trail_weight>5</trail_weight>
+    <decay_rate>0.3</decay_rate>
+    <diffuse_rate>3</diffuse_rate>
+    <steps_per_frame>1</steps_per_frame>
+    <spawn_mode>centre_circle</spawn_mode>
+    <num_agents>1000</num_agents>
+    <num_species>9</num_species>
+    <species>
+      <move_speed>100</move_speed>
+      <turn_speed>2</turn_speed>
+      <sensor_angle_deg>30</sensor_angle_deg>
+      <sensor_offset>35</sensor_offset>
+      <sensor_size>1</sensor_size>
+      <colour><r>1</r><g>1</g><b>1</b></colour>
+    </species>
+  </simulation>
+</slime_config>"#,
+        )
+        .unwrap();
+
+        let loaded = load_ui_state_from_xml(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert_eq!(loaded.num_species, 4);
     }
 
     #[test]
