@@ -28,21 +28,30 @@ Each frame:
 3. Simulation runs 1–10 compute steps (configurable)
 4. Render: blit color texture to screen
 5. egui rendered on top, frame presented
+6. Competing mode only: per-species population counts read back from the GPU (a blocking wait)
 
 ### GPU Pipeline (`simulation.rs` — core logic)
 
-Four GPU stages per simulation step:
+GPU stages, in order. `food_regen`, `update` and `diffuse` run once per step (`step()`); `colour` and `blit` run once per frame (`render()`):
+- **`food_regen`** — competing mode only: grows food back into `food_buffer`
 - **`update`** — agents sense pheromone channels, steer, move, deposit trail
 - **`diffuse`** — 3×3 box blur + exponential decay on trail textures
-- **`colour`** — maps per-species trail intensities to RGB
+- **`colour`** — maps per-species trail intensities to RGB, over a faint food layer
 - **`blit`** — fullscreen triangle renders color texture to screen
 
 **Ping-pong buffering:** Two trail textures (RGBA16Float, one channel per species) swap read/write roles each step to avoid read-after-write conflicts.
 
+### Food and Competing Mode
+
+Food is a per-pixel value in 0..1. Each sensor sample adds `food * food_weight` to the agent's score, the same for every species. There are two modes, chosen by `UiState::competing_mode` (toggling it resets the sim):
+
+- **Classic (default):** a static map. `food.rs` builds it on the CPU from Gaussian clumps (`food_num_clumps`, `food_clump_radius`, `food_seed`), and `upload_classic_food_map` in `main.rs` writes it to `food_texture` on startup, resize, reset and "Regenerate Food". At the default Food Weight of 0 it has no effect and is not drawn.
+- **Competing:** agents carry `energy`. Moving and depositing trail cost energy; eating from `food_buffer` (a read-write storage buffer, zeroed on reset) gives energy. An agent with energy ≤ 0 is dead and skipped. An agent above `reproduction_threshold` gives half its energy to a dead slot at `(idx + 7919) % num_agents`, so the agent buffer is a fixed-size pool and the population never exceeds `num_agents`. `food_regen.wgsl` grows food back at clumps that move every `food_clump_lifetime` seconds (it crossfades between the old and new positions). After each step `food_buffer` is copied into `food_texture` so `colour.wgsl` can draw it. `update.wgsl` counts live agents per species into `population_buffer` (cleared each step) for the panel.
+
 ### Key Data Structures
 
-- `Agent` — position (vec2), angle (f32), species_index (u32)
-- `SimParams` — texture dimensions, agent count, trail physics, delta_time
+- `Agent` — position (vec2), angle (f32), species_index (u32), energy (f32, competing mode)
+- `SimParams` — texture dimensions, agent count, trail physics, delta_time, food and competing-mode settings
 - `SpeciesSettings` — per-species movement, sensor config, RGBA color
 - `UiState` (`ui.rs`) — all runtime-adjustable parameters
 - `Simulation` — owns all GPU buffers, textures, pipelines, and bind groups
@@ -51,14 +60,19 @@ Four GPU stages per simulation step:
 
 | File | Purpose |
 |------|---------|
-| `update.wgsl` | Agent behavior: sense with per-species attraction/repulsion, stochastic turning, movement |
+| `common.wgsl` | Shared declarations: `SimParams`, `SpeciesSettings`, `hash`, `scale_to_01` |
+| `update.wgsl` | Agent behavior: sense with per-species attraction/repulsion and food, stochastic turning, movement; in competing mode also energy, eating and reproduction |
 | `diffuse.wgsl` | Trail processing: 3×3 blur + decay per channel |
-| `colour.wgsl` | Visualization: blend species colors by trail channel intensities |
+| `colour.wgsl` | Visualization: blend species colors by trail channel intensities over the food map |
+| `food_regen.wgsl` | Competing mode: regrow food at moving clump positions |
 | `blit.wgsl` | Fullscreen triangle to screen |
+
+`common.wgsl` is prepended (`concat!` in `simulation.rs`) to every compute shader, but not to `blit.wgsl`. Its `SimParams` and `SpeciesSettings` must match the Rust structs. Shader error line numbers count from the start of `common.wgsl`, so subtract its line count to get the line in the shader's own file.
 
 ### Other Modules
 
 - `gpu.rs` — wgpu device/queue/surface setup; selects high-performance adapter (Vulkan/Metal/DX12)
+- `food.rs` — CPU generation of the classic-mode food map (Gaussian clumps, normalised to 0..1)
 - `config_io.rs` — serializes/deserializes `UiState` to/from XML (quick-xml + serde), saves to and loads from `configs/`
 
 ## Testing
