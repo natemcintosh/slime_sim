@@ -100,7 +100,8 @@ pub struct ColourParams {
     pub width: u32,
     pub height: u32,
     pub num_species: u32,
-    pub _padding: u32,
+    /// Non-zero: draw food from `food_buffer` instead of `food_texture`.
+    pub competing_mode: u32,
     /// Colour of a pixel with food 1.0; zero hides the food layer.
     pub food_colour: [f32; 4],
 }
@@ -176,6 +177,7 @@ impl Simulation {
             height,
             ui.spawn_mode,
             ui.initial_energy,
+            ui.competing_mode,
         );
 
         let agent_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -205,7 +207,7 @@ impl Simulation {
             width,
             height,
             num_species: ui.num_species,
-            _padding: 0,
+            competing_mode: u32::from(ui.competing_mode),
             food_colour: [0.0; 4],
         };
         let colour_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -272,9 +274,7 @@ impl Simulation {
         let food_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("food_buffer"),
             size: food_buffer_size,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -346,6 +346,8 @@ impl Simulation {
                 storage_buffer_entry(3, true),
                 // food_map texture
                 texture_entry(4),
+                // food_buffer storage (competing mode)
+                storage_buffer_entry(5, true),
             ],
         });
 
@@ -486,6 +488,7 @@ impl Simulation {
             &colour_view,
             &species_buffer,
             &food_view,
+            &food_buffer,
         );
 
         let blit_bind_group =
@@ -561,7 +564,7 @@ impl Simulation {
             width: self.width,
             height: self.height,
             num_species: ui.num_species,
-            _padding: 0,
+            competing_mode: u32::from(ui.competing_mode),
             food_colour: food_colour(ui),
         };
         queue.write_buffer(
@@ -665,31 +668,6 @@ impl Simulation {
             pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
         }
 
-        if self.competing_mode {
-            // Copy food_buffer -> food_texture for visualization
-            encoder.copy_buffer_to_texture(
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &self.food_buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(self.width * 4),
-                        rows_per_image: Some(self.height),
-                    },
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.food_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-
         // Swap: after diffuse, the "fresh" data is in trail[read_idx], so next frame read_idx flips
         self.trail_idx = write_idx;
     }
@@ -753,6 +731,7 @@ impl Simulation {
             self.height,
             ui.spawn_mode,
             ui.initial_energy,
+            ui.competing_mode,
         );
         let agent_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("agent_buffer"),
@@ -797,6 +776,9 @@ const TERRITORY_OFFSET: f32 = 0.7;
 /// Territories spawn: disc radius as a fraction of the smaller half-extent.
 const TERRITORY_RADIUS: f32 = 0.25;
 
+/// Competing mode: an agent starts alive if its hash is below this (about 10% of the pool).
+const COMPETING_START_ALIVE: u32 = u32::MAX / 10;
+
 #[allow(clippy::cast_precision_loss)]
 fn create_agents(
     num: u32,
@@ -805,6 +787,7 @@ fn create_agents(
     height: u32,
     mode: SpawnMode,
     initial_energy: f32,
+    competing: bool,
 ) -> Vec<Agent> {
     let cx = width as f32 / 2.0;
     let cy = height as f32 / 2.0;
@@ -820,6 +803,9 @@ fn create_agents(
             let r1 = h1 as f32 / u32::MAX as f32;
             let r2 = h2 as f32 / u32::MAX as f32;
             let heading = h3 as f32 / u32::MAX as f32 * std::f32::consts::TAU;
+            // Competing mode: most of the pool starts dead so populations can grow
+            let alive = !competing || hash_u32(i * 11 + 23) < COMPETING_START_ALIVE;
+            let energy = if alive { initial_energy } else { 0.0 };
 
             match mode {
                 SpawnMode::CentreCircle => {
@@ -829,7 +815,7 @@ fn create_agents(
                         position: [cx + angle.cos() * r, cy + angle.sin() * r],
                         angle: heading,
                         species_index,
-                        energy: initial_energy,
+                        energy,
                         _padding: 0,
                     }
                 }
@@ -837,7 +823,7 @@ fn create_agents(
                     position: [r1 * width as f32, r2 * height as f32],
                     angle: heading,
                     species_index,
-                    energy: initial_energy,
+                    energy,
                     _padding: 0,
                 },
                 SpawnMode::InwardCircle => {
@@ -851,7 +837,7 @@ fn create_agents(
                         position: [px, py],
                         angle: inward,
                         species_index,
-                        energy: initial_energy,
+                        energy,
                         _padding: 0,
                     }
                 }
@@ -868,7 +854,7 @@ fn create_agents(
                         position: [disc_x + angle.cos() * r, disc_y + angle.sin() * r],
                         angle: heading,
                         species_index,
-                        energy: initial_energy,
+                        energy,
                         _padding: 0,
                     }
                 }
@@ -1131,6 +1117,7 @@ fn create_diffuse_bind_groups(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_colour_bind_groups(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1139,6 +1126,7 @@ fn create_colour_bind_groups(
     colour_view: &wgpu::TextureView,
     species: &wgpu::Buffer,
     food_view: &wgpu::TextureView,
+    food_buffer: &wgpu::Buffer,
 ) -> [wgpu::BindGroup; 2] {
     // Group i: read trail i
     std::array::from_fn(|i| {
@@ -1165,6 +1153,10 @@ fn create_colour_bind_groups(
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(food_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: food_buffer.as_entire_binding(),
                 },
             ],
         })
@@ -1281,8 +1273,8 @@ mod tests {
         let width = 640;
         let height = 480;
 
-        let first = create_agents(num_agents, num_species, width, height, mode, 1.0);
-        let second = create_agents(num_agents, num_species, width, height, mode, 1.0);
+        let first = create_agents(num_agents, num_species, width, height, mode, 1.0, false);
+        let second = create_agents(num_agents, num_species, width, height, mode, 1.0, false);
 
         assert_eq!(first.len(), num_agents as usize);
         assert_eq!(second.len(), num_agents as usize);
@@ -1295,10 +1287,27 @@ mod tests {
     }
 
     #[test]
+    fn create_agents_competing_starts_about_a_tenth_alive_per_species() {
+        let agents = create_agents(20_000, 2, 640, 480, SpawnMode::Territories, 1.5, true);
+        for species in 0..2 {
+            let alive = agents
+                .iter()
+                .filter(|a| a.species_index == species && a.energy > 0.0)
+                .count();
+            assert!((800..1200).contains(&alive), "species {species}: {alive}");
+        }
+        assert!(
+            agents
+                .iter()
+                .all(|a| a.energy <= 0.0 || (a.energy - 1.5).abs() < f32::EPSILON)
+        );
+    }
+
+    #[test]
     fn create_agents_random_fill_stays_within_bounds() {
         let width = 320;
         let height = 200;
-        let agents = create_agents(1000, 4, width, height, SpawnMode::RandomFill, 1.0);
+        let agents = create_agents(1000, 4, width, height, SpawnMode::RandomFill, 1.0, false);
 
         for agent in agents {
             assert!(agent.position[0] >= 0.0 && agent.position[0] <= width as f32);
@@ -1315,7 +1324,7 @@ mod tests {
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
         let radius = cx.min(cy) * 0.4;
-        let agents = create_agents(1000, 4, width, height, mode, 1.0);
+        let agents = create_agents(1000, 4, width, height, mode, 1.0, false);
 
         for agent in agents {
             let dx = agent.position[0] - cx;
@@ -1338,6 +1347,7 @@ mod tests {
             height,
             SpawnMode::Territories,
             1.0,
+            false,
         );
 
         for a in &agents {
@@ -1377,7 +1387,7 @@ mod tests {
     #[test]
     fn random_fill_heading_is_independent_of_x_position() {
         let width = 640;
-        let agents = create_agents(1000, 1, width, 480, SpawnMode::RandomFill, 1.0);
+        let agents = create_agents(1000, 1, width, 480, SpawnMode::RandomFill, 1.0, false);
         let correlated = agents
             .iter()
             .filter(|a| {
@@ -1392,7 +1402,7 @@ mod tests {
     fn centre_circle_heading_is_independent_of_polar_angle() {
         let (width, height) = (600, 600);
         let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
-        let agents = create_agents(1000, 1, width, height, SpawnMode::CentreCircle, 1.0);
+        let agents = create_agents(1000, 1, width, height, SpawnMode::CentreCircle, 1.0, false);
         let outward = agents
             .iter()
             .filter(|a| {
@@ -1409,7 +1419,7 @@ mod tests {
         let height = 600;
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
-        let agents = create_agents(1000, 2, width, height, SpawnMode::InwardCircle, 1.0);
+        let agents = create_agents(1000, 2, width, height, SpawnMode::InwardCircle, 1.0, false);
 
         for agent in agents {
             let to_center_x = cx - agent.position[0];
@@ -1424,9 +1434,8 @@ mod tests {
         }
     }
 
-    #[test]
-    #[ignore = "Requires compatible local GPU/driver stack"]
-    fn gpu_smoke_can_create_simulation_and_step_once() {
+    /// A device for GPU tests, or `None` (after printing why) if this machine has none.
+    fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         pollster::block_on(async {
             let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
@@ -1441,11 +1450,11 @@ mod tests {
                 })
                 .await
             else {
-                eprintln!("Skipping GPU smoke test: no adapter available");
-                return;
+                eprintln!("Skipping GPU test: no adapter available");
+                return None;
             };
 
-            let (device, queue) = match adapter
+            match adapter
                 .request_device(&wgpu::DeviceDescriptor {
                     label: Some("test_device"),
                     required_features: wgpu::Features::empty(),
@@ -1454,28 +1463,102 @@ mod tests {
                 })
                 .await
             {
-                Ok(pair) => pair,
+                Ok(pair) => Some(pair),
                 Err(err) => {
-                    eprintln!("Skipping GPU smoke test: failed to create device ({err})");
-                    return;
+                    eprintln!("Skipping GPU test: failed to create device ({err})");
+                    None
                 }
-            };
+            }
+        })
+    }
 
-            let ui = UiState::default();
-            let mut sim = Simulation::new(
-                &device,
-                &queue,
-                wgpu::TextureFormat::Rgba8UnormSrgb,
-                64,
-                64,
-                &ui,
-            );
+    /// Runs `ui` headless at 60 steps per second and returns the per-species
+    /// population after each simulated second.
+    fn run_populations(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        ui: &UiState,
+        width: u32,
+        height: u32,
+        seconds: u32,
+    ) -> Vec<[u32; 4]> {
+        let mut sim = Simulation::new(
+            device,
+            queue,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            width,
+            height,
+            ui,
+        );
+        (0..seconds)
+            .map(|_| {
+                for _ in 0..60 {
+                    sim.update_params(queue, ui, 1.0 / 60.0);
+                    let mut encoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+                    sim.step(&mut encoder);
+                    sim.copy_population_to_readback(&mut encoder);
+                    queue.submit(std::iter::once(encoder.finish()));
+                }
+                sim.read_population_counts(device)
+            })
+            .collect()
+    }
 
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_smoke_encoder"),
-            });
-            sim.step(&mut encoder);
-            queue.submit(std::iter::once(encoder.finish()));
+    #[test]
+    #[ignore = "Requires compatible local GPU/driver stack"]
+    fn gpu_smoke_can_create_simulation_and_step_once() {
+        let Some((device, queue)) = test_device() else {
+            return;
+        };
+        let ui = UiState::default();
+        let mut sim = Simulation::new(
+            &device,
+            &queue,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            64,
+            64,
+            &ui,
+        );
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gpu_smoke_encoder"),
         });
+        sim.step(&mut encoder);
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    #[test]
+    #[ignore = "Requires compatible local GPU/driver stack"]
+    fn gpu_competing_mode_steps_at_width_not_multiple_of_64() {
+        let Some((device, queue)) = test_device() else {
+            return;
+        };
+        let ui = UiState {
+            competing_mode: true,
+            num_agents: 1000,
+            ..UiState::default()
+        };
+        assert_eq!(run_populations(&device, &queue, &ui, 100, 80, 1).len(), 1);
+    }
+
+    #[test]
+    #[ignore = "Requires compatible local GPU/driver stack"]
+    fn gpu_competing_defaults_let_populations_grow_without_extinction() {
+        let Some((device, queue)) = test_device() else {
+            return;
+        };
+        let mut ui = UiState {
+            competing_mode: true,
+            ..UiState::default()
+        };
+        ui.apply_competing_defaults();
+
+        let counts = run_populations(&device, &queue, &ui, 1280, 720, 60);
+        let total = |c: &[u32; 4]| c.iter().sum::<u32>();
+        let (first, last) = (&counts[0], &counts[59]);
+        assert!(total(last) > total(first) * 2, "{first:?} -> {last:?}");
+        assert!(total(last) < ui.num_agents, "pool is full: {last:?}");
+        assert!(last[0] > 0 && last[1] > 0, "a species died out: {last:?}");
     }
 }

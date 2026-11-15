@@ -274,11 +274,11 @@ impl Default for UiState {
             food_seed: 42,
             competing_mode: false,
             initial_energy: 1.0,
-            move_energy_cost: 0.001,
-            deposit_energy_cost: 0.0005,
-            energy_per_food: 0.5,
-            food_eat_rate: 0.1,
-            food_regen_rate: 0.01,
+            move_energy_cost: 0.03,
+            deposit_energy_cost: 0.02,
+            energy_per_food: 2.0,
+            food_eat_rate: 0.5,
+            food_regen_rate: 0.35,
             food_clump_lifetime: 30.0,
             reproduction_threshold: 2.0,
             population_counts: [0; 4],
@@ -304,7 +304,7 @@ impl UiState {
 
     /// Sets what competing mode needs for species to actually compete. Values that
     /// already work are kept.
-    fn apply_competing_defaults(&mut self) {
+    pub(crate) fn apply_competing_defaults(&mut self) {
         self.num_species = self.num_species.max(2);
         if self.food_weight <= 0.0 {
             self.food_weight = 0.5;
@@ -542,12 +542,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
                                     .text("Initial Energy"),
                             );
                             ui.add(
-                                egui::Slider::new(&mut state.move_energy_cost, 0.0001..=0.01)
+                                egui::Slider::new(&mut state.move_energy_cost, 0.0001..=1.0)
                                     .text("Move Energy Cost")
                                     .logarithmic(true),
                             );
                             ui.add(
-                                egui::Slider::new(&mut state.deposit_energy_cost, 0.0..=0.01)
+                                egui::Slider::new(&mut state.deposit_energy_cost, 0.0..=1.0)
                                     .text("Deposit Energy Cost")
                                     .logarithmic(true),
                             );

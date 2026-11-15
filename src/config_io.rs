@@ -83,19 +83,19 @@ fn default_initial_energy() -> f32 {
     1.0
 }
 fn default_move_energy_cost() -> f32 {
-    0.001
+    0.03
 }
 fn default_deposit_energy_cost() -> f32 {
-    0.0005
+    0.02
 }
 fn default_energy_per_food() -> f32 {
-    0.5
+    2.0
 }
 fn default_food_eat_rate() -> f32 {
-    0.1
+    0.5
 }
 fn default_food_regen_rate() -> f32 {
-    0.01
+    0.35
 }
 fn default_food_clump_lifetime() -> f32 {
     30.0
