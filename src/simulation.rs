@@ -1084,8 +1084,10 @@ fn create_agents(
             // Simple hash for deterministic randomness
             let h1 = hash_u32(i * 3 + 7);
             let h2 = hash_u32(i * 5 + 13);
+            let h3 = hash_u32(i * 7 + 19);
             let r1 = h1 as f32 / u32::MAX as f32;
             let r2 = h2 as f32 / u32::MAX as f32;
+            let heading = h3 as f32 / u32::MAX as f32 * std::f32::consts::TAU;
 
             match mode {
                 SpawnMode::CentreCircle => {
@@ -1093,7 +1095,7 @@ fn create_agents(
                     let r = (r2).sqrt() * radius;
                     Agent {
                         position: [cx + angle.cos() * r, cy + angle.sin() * r],
-                        angle: r1 * std::f32::consts::TAU,
+                        angle: heading,
                         species_index,
                         energy: initial_energy,
                         _padding: 0,
@@ -1101,7 +1103,7 @@ fn create_agents(
                 }
                 SpawnMode::RandomFill => Agent {
                     position: [r1 * width as f32, r2 * height as f32],
-                    angle: r1 * std::f32::consts::TAU,
+                    angle: heading,
                     species_index,
                     energy: initial_energy,
                     _padding: 0,
@@ -1528,6 +1530,35 @@ mod tests {
             let dist = (dx * dx + dy * dy).sqrt();
             assert!(dist <= radius + 1e-4);
         }
+    }
+
+    #[test]
+    fn random_fill_heading_is_independent_of_x_position() {
+        let width = 640;
+        let agents = create_agents(1000, 1, width, 480, SpawnMode::RandomFill, 1.0);
+        let correlated = agents
+            .iter()
+            .filter(|a| {
+                let from_x = a.position[0] / width as f32 * std::f32::consts::TAU;
+                angle_delta(a.angle, from_x) < 0.01
+            })
+            .count();
+        assert!(correlated < 50, "{correlated}/1000 headings track x");
+    }
+
+    #[test]
+    fn centre_circle_heading_is_independent_of_polar_angle() {
+        let (width, height) = (600, 600);
+        let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
+        let agents = create_agents(1000, 1, width, height, SpawnMode::CentreCircle, 1.0);
+        let outward = agents
+            .iter()
+            .filter(|a| {
+                let polar = (a.position[1] - cy).atan2(a.position[0] - cx);
+                angle_delta(a.angle, polar) < 0.01
+            })
+            .count();
+        assert!(outward < 50, "{outward}/1000 agents face exactly outward");
     }
 
     #[test]
