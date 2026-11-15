@@ -342,8 +342,10 @@ mod tests {
 
     #[test]
     fn serialized_config_uses_active_species_count() {
-        let mut ui = UiState::default();
-        ui.num_species = 2;
+        let mut ui = UiState {
+            num_species: 2,
+            ..UiState::default()
+        };
         ui.species[0].colour = [0.9, 0.1, 0.2];
         ui.species[1].colour = [0.2, 0.8, 0.4];
 
@@ -361,8 +363,10 @@ mod tests {
 
     #[test]
     fn build_config_clamps_species_count_to_available_slots() {
-        let mut ui = UiState::default();
-        ui.num_species = 99;
+        let ui = UiState {
+            num_species: 99,
+            ..UiState::default()
+        };
 
         let cfg = build_config("title", "notes", &ui, 99);
 
@@ -393,10 +397,12 @@ mod tests {
 
     #[test]
     fn round_trip_save_then_load_preserves_simulation_params() {
-        let mut ui = UiState::default();
-        ui.num_species = 2;
-        ui.trail_weight = 7.5;
-        ui.spawn_mode = SpawnMode::InwardCircle;
+        let mut ui = UiState {
+            num_species: 2,
+            trail_weight: 7.5,
+            spawn_mode: SpawnMode::InwardCircle,
+            ..UiState::default()
+        };
         ui.species[0].move_speed = 200.0;
         ui.species[1].colour = [0.5, 0.6, 0.7];
 
@@ -413,12 +419,14 @@ mod tests {
 
     #[test]
     fn round_trip_preserves_food_params() {
-        let mut ui = UiState::default();
-        ui.food_weight = 0.07;
-        ui.food_num_clumps = 12;
-        ui.food_clump_radius = 45.5;
-        ui.food_viz_weight = 0.8;
-        ui.show_food = false;
+        let ui = UiState {
+            food_weight: 0.07,
+            food_num_clumps: 12,
+            food_clump_radius: 45.5,
+            food_viz_weight: 0.8,
+            show_food: false,
+            ..UiState::default()
+        };
 
         let path = save_ui_state_to_xml(&ui, "food-round-trip", "").unwrap();
         let loaded = load_ui_state_from_xml(&path).unwrap();

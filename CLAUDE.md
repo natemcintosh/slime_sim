@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 just fmt          # Format code with cargo fmt
+just lint         # Lint with Clippy (pedantic)
 just test         # Run tests (cargo nextest if available, else cargo test)
 just run          # Run release build
 

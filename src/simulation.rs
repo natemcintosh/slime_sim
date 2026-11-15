@@ -276,7 +276,7 @@ impl Simulation {
         );
 
         // --- Food storage buffer (for competing mode read-write access) ---
-        let food_buffer_size = (width * height) as u64 * 4;
+        let food_buffer_size = u64::from(width * height) * 4;
         let food_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("food_buffer"),
             size: food_buffer_size,
@@ -1403,6 +1403,7 @@ fn create_blit_bind_group(
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
     use crate::ui::UiState;
@@ -1456,12 +1457,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 129708002)]
-    #[case(1, 2831084092)]
-    #[case(7, 2120684060)]
-    #[case(42, 1223963391)]
-    #[case(123456789, 4272394698)]
-    #[case(u32::MAX, 3861530882)]
+    #[case(0, 129_708_002)]
+    #[case(1, 2_831_084_092)]
+    #[case(7, 2_120_684_060)]
+    #[case(42, 1_223_963_391)]
+    #[case(123_456_789, 4_272_394_698)]
+    #[case(u32::MAX, 3_861_530_882)]
     fn hash_u32_matches_known_values(#[case] input: u32, #[case] expected: u32) {
         assert_eq!(hash_u32(input), expected);
     }
@@ -1637,19 +1638,16 @@ mod tests {
                 ..Default::default()
             });
 
-            let adapter = match instance
+            let Ok(adapter) = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::LowPower,
                     compatible_surface: None,
                     force_fallback_adapter: false,
                 })
                 .await
-            {
-                Ok(adapter) => adapter,
-                Err(_) => {
-                    eprintln!("Skipping GPU smoke test: no adapter available");
-                    return;
-                }
+            else {
+                eprintln!("Skipping GPU smoke test: no adapter available");
+                return;
             };
 
             let (device, queue) = match adapter

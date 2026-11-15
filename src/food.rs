@@ -76,8 +76,8 @@ mod tests {
     #[test]
     fn food_map_values_normalized() {
         let map = generate_food_map(64, 64, 5, 15.0, 123);
-        let max = map.iter().cloned().fold(0.0f32, f32::max);
-        let min = map.iter().cloned().fold(f32::MAX, f32::min);
+        let max = map.iter().copied().fold(0.0f32, f32::max);
+        let min = map.iter().copied().fold(f32::MAX, f32::min);
         assert!((max - 1.0).abs() < 1e-6, "max should be ~1.0, got {max}");
         assert!(min >= 0.0, "min should be >= 0.0, got {min}");
     }

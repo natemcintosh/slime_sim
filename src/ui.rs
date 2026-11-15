@@ -496,8 +496,12 @@ pub fn draw_ui(ctx: &Context, state: &mut UiState) {
 
                             ui.separator();
                             ui.label("Population");
-                            for i in 0..state.num_species as usize {
-                                let count = state.population_counts[i];
+                            for (i, count) in state
+                                .population_counts
+                                .iter()
+                                .enumerate()
+                                .take(state.num_species as usize)
+                            {
                                 ui.label(format!("  Species {}: {count}", i + 1));
                             }
                         }
